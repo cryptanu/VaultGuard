@@ -1,0 +1,22 @@
+# Node
+node_modules/
+pnpm-lock.yaml
+package-lock.json
+dist/
+build/
+
+# Vite
+.vite/
+
+# Foundry
+out/
+cache/
+lib/
+
+# Env
+.env
+.env.local
+
+# MacOS
+.DS_Store
+

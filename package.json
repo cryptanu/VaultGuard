@@ -1,0 +1,15 @@
+{
+  "name": "vaultguard-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "postinstall": "npm install --prefix dashboard || true",
+    "dashboard:dev": "npm run dev --prefix dashboard",
+    "dashboard:build": "npm run build --prefix dashboard",
+    "dashboard:lint": "npm run lint --prefix dashboard",
+    "contracts:test": "forge test",
+    "contracts:build": "forge build",
+    "demo": "node demo/run-demo.js"
+  }
+}
+

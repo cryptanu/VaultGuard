@@ -31,7 +31,7 @@ export const vaultGuardAbi = [
       {
         components: [
           { name: "token", type: "address" },
-          { name: "balance", type: "uint256" },
+          { name: "encryptedBalance", type: "bytes32" },
           { name: "targetWeightBps", type: "uint16" }
         ],
         type: "tuple[]"
@@ -103,6 +103,38 @@ export const vaultGuardAbi = [
     stateMutability: "nonpayable",
     inputs: [{ name: "vault", type: "address" }],
     outputs: []
+  },
+  {
+    type: "function",
+    name: "deposit",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "token", type: "address" },
+      { name: "amount", type: "uint256" },
+      {
+        name: "encryptedAmount",
+        type: "tuple",
+        components: [
+          { name: "data", type: "bytes" },
+          { name: "securityZone", type: "int32" }
+        ]
+      }
+    ],
+    outputs: []
+  },
+  {
+    type: "function",
+    name: "schedulePayroll",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "encryptedRecipient", type: "bytes32" },
+      { name: "encryptedAmount", type: "bytes32" },
+      { name: "recipientHint", type: "address" },
+      { name: "amountHint", type: "uint256" },
+      { name: "token", type: "address" },
+      { name: "frequency", type: "uint64" }
+    ],
+    outputs: [{ name: "entryId", type: "uint256" }]
   },
   {
     type: "function",

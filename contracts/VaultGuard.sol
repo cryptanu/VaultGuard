@@ -42,7 +42,7 @@ contract VaultGuard is Permissioned {
 
     struct VaultSnapshot {
         address token;
-        uint256 balance;
+        bytes32 encryptedBalance;
         uint16 targetWeightBps;
     }
 
@@ -328,7 +328,7 @@ contract VaultGuard is Permissioned {
         for (uint256 i = 0; i < tokens.length; i++) {
             snapshot[i] = VaultSnapshot({
                 token: tokens[i],
-                balance: _vaultBalances[vault][tokens[i]],
+                encryptedBalance: bytes32(euint128.unwrap(_encryptedBalances[vault][tokens[i]])),
                 targetWeightBps: config.targetWeightsBps.length > i ? config.targetWeightsBps[i] : 0
             });
         }

@@ -30,7 +30,7 @@ const tokenMetadata: Record<
 
 type VaultAsset = {
   token: string;
-  balance: bigint;
+  encryptedBalance: `0x${string}`;
   targetWeightBps: number;
   symbol: string;
   name: string;
@@ -41,19 +41,19 @@ type VaultAsset = {
 const fallbackAssets: VaultAsset[] = [
   {
     token: "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-    balance: BigInt(Math.floor(45.2 * 1e18)),
+    encryptedBalance: ("0x" + "0".repeat(64)) as `0x${string}`,
     targetWeightBps: 4500,
     ...tokenMetadata["0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"]
   },
   {
     token: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-    balance: BigInt(104500 * 1e6),
+    encryptedBalance: ("0x" + "0".repeat(64)) as `0x${string}`,
     targetWeightBps: 3500,
     ...tokenMetadata["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"]
   },
   {
     token: "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599",
-    balance: BigInt(Math.floor(1.5 * 1e8)),
+    encryptedBalance: ("0x" + "0".repeat(64)) as `0x${string}`,
     targetWeightBps: 2000,
     ...tokenMetadata["0x2260fac5e5542a773aa44fbcfedf7c193bc2c599"]
   }
@@ -79,7 +79,7 @@ export const useVaultGuard = () => {
       return fallbackAssets;
     }
 
-    return (assetsData as { token: string; balance: bigint; targetWeightBps: number }[]).map((asset) => {
+    return (assetsData as { token: string; encryptedBalance: `0x${string}`; targetWeightBps: number }[]).map((asset) => {
       const metadata = tokenMetadata[asset.token.toLowerCase()] ?? {
         symbol: "ASSET",
         name: "Unknown Asset",
@@ -88,7 +88,7 @@ export const useVaultGuard = () => {
       };
       return {
         token: asset.token,
-        balance: asset.balance,
+        encryptedBalance: asset.encryptedBalance,
         targetWeightBps: asset.targetWeightBps,
         ...metadata
       };

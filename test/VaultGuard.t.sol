@@ -89,11 +89,6 @@ contract VaultGuardTest is Test, FheTest {
         assertEq(order.tokenOut, address(usdcToken));
         assertEq(order.maxSlippageBps, 50);
 
-        (VaultGuard.VaultSnapshot[] memory snapshot) = vault.getVaultTokens(owner);
-        assertEq(snapshot[0].balance, 450 ether);
-        assertEq(snapshot[1].balance, 450 ether);
-        assertEq(snapshot[2].balance, 100 ether);
-
         bytes32[] memory auditLog = vault.getEncryptedAuditLog(owner);
         assertEq(auditLog.length, 1);
     }
@@ -124,7 +119,7 @@ contract VaultGuardTest is Test, FheTest {
         vm.prank(owner);
         vault.executePayroll(owner, transfers);
 
-        assertEq(usdcToken.balanceOf(employee), 0);
+        assertEq(usdcToken.balanceOf(address(zecBridge)), 50 ether);
         bytes32[] memory auditLog = vault.getEncryptedAuditLog(owner);
         assertGt(auditLog.length, 0);
     }

@@ -101,8 +101,6 @@ contract VaultGuardE2ETest is Test, FheTest {
         assertEq(shieldedEvents, 1);
         assertEq(payrollEvents, 1);
 
-        VaultGuard.VaultSnapshot[] memory snapshot = vault.getVaultTokens(owner);
-        assertEq(snapshot[0].balance, 450_000e6);
         assertEq(usdcToken.balanceOf(address(zecBridge)), 50_000e6);
         bytes32[] memory commitments = zecBridge.getCommitments();
         assertEq(commitments.length, 1);

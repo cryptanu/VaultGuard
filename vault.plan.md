@@ -48,7 +48,7 @@
 - `fherc20-impl`: Build FHERC20 + CoFHE helper layer using `@fhenixprotocol/contracts`. ✅
 - `vault-cofhe-integration`: Wire encrypted balances/weights into `VaultGuard`, update ABI & tests. ✅
 - `zec-settlement`: Implement wrapped ZEC bridge + shielded payroll settlement. ✅
-- `tests-docs-refresh`: Expand test coverage, docs, and demo assets post-ZEC integration. ⏳
+- `tests-docs-refresh`: Expand test coverage, docs, and demo assets post-ZEC integration. ✅
 
 ### To-dos
 

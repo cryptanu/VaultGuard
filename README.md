@@ -273,6 +273,11 @@ forge test
 
 # 4. Launch the dashboard
 npm run dev --prefix dashboard
+
+# 5. Use dashboard forms (mock)
+#    - Deposit mock tokens (encrypts amount client-side)
+#    - Schedule encrypted payroll entries
+#    - Execute shielded payroll via wrapped ZEC bridge
 ```
 
 ---

@@ -18,11 +18,15 @@ import {
   useAccount,
   useConnect,
   useDisconnect,
-  useSwitchChain
+  useSwitchChain,
+  useWriteContract
 } from "wagmi";
+import { keccak256, padHex, parseUnits, stringToBytes, stringToHex, toHex } from "viem";
 
 import { fhenixHelium } from "./lib/chain";
 import { useVaultGuard } from "./hooks/useVaultGuard";
+import { env } from "./config/env";
+import { vaultGuardAbi } from "./abis/vaultGuard";
 
 type FHEValueProps = {
   value: number | string;
@@ -124,8 +128,7 @@ type DashboardAsset = {
   token: string;
   symbol: string;
   name: string;
-  balance: number;
-  price: number;
+  encryptedBalance: string;
   allocation: number;
 };
 
@@ -142,10 +145,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({
   onShieldAssets,
   isContractBacked
 }) => {
-  const totalValue = useMemo(
-    () => assets.reduce((acc, asset) => acc + asset.balance * asset.price, 0),
-    [assets]
-  );
+  const totalDisplay = isPrivate ? "Encrypted" : "Private";
 
   return (
     <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
@@ -171,9 +171,8 @@ const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
           <FHEValue
             label="Total Vault Value"
-            value={totalValue}
+            value={totalDisplay}
             isPrivate={isPrivate}
-            isCurrency
             className="text-3xl font-bold"
           />
         </div>
@@ -231,9 +230,8 @@ const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
                 <div className="text-right">
                   <FHEValue
-                    value={asset.balance * asset.price}
+                      value={asset.encryptedBalance}
                     isPrivate={isPrivate}
-                    isCurrency
                     className="font-mono text-sm"
                   />
                   <FHEValue
@@ -248,7 +246,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({
                   className={`h-full rounded-full transition-all duration-1000 ${
                     isPrivate ? "bg-purple-900/50 blur-[2px]" : "bg-purple-600 blur-none"
                   }`}
-                  style={{ width: `${asset.allocation}%` }}
+                  style={{ width: `${Math.min(100, Math.max(0, asset.allocation))}%` }}
                 />
               </div>
             </div>
@@ -434,39 +432,142 @@ const App: React.FC = () => {
   const { connectAsync, connectors, isPending } = useConnect();
   const { disconnect } = useDisconnect();
   const { switchChainAsync, chains } = useSwitchChain();
+  const { writeContractAsync } = useWriteContract();
   const { assets: vaultAssets, isContractBacked } = useVaultGuard();
+
+  const vaultAddress = env.vaultGuardAddress;
+  const zeroAddress = "0x0000000000000000000000000000000000000000";
+
+  const [depositToken, setDepositToken] = useState<string>("");
+  const [depositAmount, setDepositAmount] = useState<string>("");
+  const [depositDecimals, setDepositDecimals] = useState<string>("6");
+  const [payrollToken, setPayrollToken] = useState<string>("");
+  const [payrollAlias, setPayrollAlias] = useState<string>("");
+  const [payrollAmount, setPayrollAmount] = useState<string>("");
+  const [payrollFrequencyDays, setPayrollFrequencyDays] = useState<string>("30");
+  const [executeAlias, setExecuteAlias] = useState<string>("");
+  const [executeAmount, setExecuteAmount] = useState<string>("");
+  const [txStatus, setTxStatus] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   const walletConnected = isConnected || manualConnected;
   const activeAddress = address ?? (manualConnected ? "0xVaultGuard...AA" : "");
 
   const dashboardAssets = useMemo<DashboardAsset[]>(() => {
-    const parsed = vaultAssets.map((asset) => {
-      const balance =
-        Number(asset.balance) / Math.pow(10, asset.decimals);
-      return {
-        token: asset.token,
-        symbol: asset.symbol,
-        name: asset.name,
-        balance,
-        price: asset.priceUsd,
-        allocation: 0
-      };
-    });
-
-    const totalValue = parsed.reduce(
-      (acc, item) => acc + item.balance * item.price,
-      0
-    );
-
-    if (totalValue === 0) {
-      return parsed;
-    }
-
-    return parsed.map((item) => ({
-      ...item,
-      allocation: Math.round((item.balance * item.price * 100) / totalValue)
+    return vaultAssets.map((asset) => ({
+      token: asset.token,
+      symbol: asset.symbol,
+      name: asset.name,
+      encryptedBalance: asset.encryptedBalance,
+      allocation: Math.round(asset.targetWeightBps / 100)
     }));
   }, [vaultAssets]);
+
+  const withStatus = (message: string) => {
+    setTxStatus(message);
+    setTimeout(() => setTxStatus(null), 6000);
+  };
+
+  const handleDeposit = async () => {
+    if (!vaultAddress || !depositToken || !depositAmount) {
+      withStatus("Please provide token and amount.");
+      return;
+    }
+    if (!walletConnected || !address) {
+      withStatus("Connect a wallet first.");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const decimals = Number(depositDecimals) || 6;
+      const amountBigInt = parseUnits(depositAmount, decimals);
+      const ciphertext = padHex(toHex(amountBigInt), { size: 32 });
+      await writeContractAsync({
+        address: vaultAddress as `0x${string}`,
+        abi: vaultGuardAbi,
+        functionName: "deposit",
+        args: [
+          depositToken as `0x${string}`,
+          amountBigInt,
+          { data: ciphertext, securityZone: 0 }
+        ]
+      });
+      withStatus("Deposit submitted.");
+    } catch (error) {
+      withStatus(`Deposit failed: ${(error as Error).message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSchedulePayroll = async () => {
+    if (!vaultAddress || !payrollToken || !payrollAlias || !payrollAmount) {
+      withStatus("Provide alias, amount, and token.");
+      return;
+    }
+    if (!walletConnected || !address) {
+      withStatus("Connect a wallet first.");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const encryptedRecipient = keccak256(stringToBytes(payrollAlias));
+      const encryptedAmount = keccak256(stringToBytes(`${payrollAlias}:${payrollAmount}`));
+      const amountHint = parseUnits(payrollAmount, 6);
+      const frequencySeconds =
+        BigInt(Number(payrollFrequencyDays || "30")) * 24n * 60n * 60n;
+
+      await writeContractAsync({
+        address: vaultAddress as `0x${string}`,
+        abi: vaultGuardAbi,
+        functionName: "schedulePayroll",
+        args: [
+          encryptedRecipient,
+          encryptedAmount,
+          zeroAddress,
+          amountHint,
+          payrollToken as `0x${string}`,
+          frequencySeconds
+        ]
+      });
+      withStatus("Payroll entry scheduled.");
+    } catch (error) {
+      withStatus(`Schedule failed: ${(error as Error).message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleExecutePayroll = async () => {
+    if (!vaultAddress || !address || !executeAlias || !executeAmount) {
+      withStatus("Provide alias and amount for execution.");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const transfers = [
+        {
+          vault: address as `0x${string}`,
+          recipientDiversifier: keccak256(stringToBytes(`${executeAlias}-div`)),
+          recipientPk: keccak256(stringToBytes(`${executeAlias}-pk`)),
+          metadata: stringToHex(`payroll:${executeAlias}`),
+          encryptedAmount: keccak256(stringToBytes(`${executeAlias}:${executeAmount}`))
+        }
+      ];
+
+      await writeContractAsync({
+        address: vaultAddress as `0x${string}`,
+        abi: vaultGuardAbi,
+        functionName: "executePayroll",
+        args: [address as `0x${string}`, transfers]
+      });
+      withStatus("Payroll execution sent.");
+    } catch (error) {
+      withStatus(`Execute failed: ${(error as Error).message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const ensureFhenixNetwork = async () => {
     const alreadyOnChain = chains.some((chain) => chain.id === fhenixHelium.id);
@@ -620,6 +721,96 @@ const App: React.FC = () => {
             </div>
           ) : (
             <>
+              {vaultAddress && (
+                <div className="mb-8 grid gap-6 lg:grid-cols-3">
+                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+                    <h3 className="text-white font-semibold">Deposit (Mock)</h3>
+                    <input
+                      className="w-full rounded-md bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white"
+                      placeholder="Token address"
+                      value={depositToken}
+                      onChange={(e) => setDepositToken(e.target.value)}
+                    />
+                    <div className="flex gap-3">
+                      <input
+                        className="w-full rounded-md bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white"
+                        placeholder="Amount"
+                        value={depositAmount}
+                        onChange={(e) => setDepositAmount(e.target.value)}
+                      />
+                      <input
+                        className="w-20 rounded-md bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white"
+                        placeholder="Dec"
+                        value={depositDecimals}
+                        onChange={(e) => setDepositDecimals(e.target.value)}
+                      />
+                    </div>
+                    <Button onClick={handleDeposit} disabled={isSubmitting}>
+                      Submit Deposit
+                    </Button>
+                  </div>
+
+                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+                    <h3 className="text-white font-semibold">Schedule Payroll (Mock)</h3>
+                    <input
+                      className="w-full rounded-md bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white"
+                      placeholder="Recipient alias"
+                      value={payrollAlias}
+                      onChange={(e) => setPayrollAlias(e.target.value)}
+                    />
+                    <input
+                      className="w-full rounded-md bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white"
+                      placeholder="Amount (e.g. 50000)"
+                      value={payrollAmount}
+                      onChange={(e) => setPayrollAmount(e.target.value)}
+                    />
+                    <input
+                      className="w-full rounded-md bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white"
+                      placeholder="Payroll token address"
+                      value={payrollToken}
+                      onChange={(e) => setPayrollToken(e.target.value)}
+                    />
+                    <input
+                      className="w-full rounded-md bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white"
+                      placeholder="Frequency (days)"
+                      value={payrollFrequencyDays}
+                      onChange={(e) => setPayrollFrequencyDays(e.target.value)}
+                    />
+                    <Button onClick={handleSchedulePayroll} disabled={isSubmitting}>
+                      Schedule Encrypted Payroll
+                    </Button>
+                  </div>
+
+                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+                    <h3 className="text-white font-semibold">Execute Payroll (Mock)</h3>
+                    <input
+                      className="w-full rounded-md bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white"
+                      placeholder="Recipient alias"
+                      value={executeAlias}
+                      onChange={(e) => setExecuteAlias(e.target.value)}
+                    />
+                    <input
+                      className="w-full rounded-md bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white"
+                      placeholder="Amount (e.g. 50000)"
+                      value={executeAmount}
+                      onChange={(e) => setExecuteAmount(e.target.value)}
+                    />
+                    <Button onClick={handleExecutePayroll} disabled={isSubmitting}>
+                      Execute Shielded Payroll
+                    </Button>
+                    <p className="text-xs text-slate-500">
+                      Transfers are mocked with hashed metadata for demo purposes.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {txStatus && (
+                <div className="mb-6 rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-200">
+                  {txStatus}
+                </div>
+              )}
+
               {currentView === "dashboard" && (
                 <DashboardView
                   isPrivate={isPrivate}

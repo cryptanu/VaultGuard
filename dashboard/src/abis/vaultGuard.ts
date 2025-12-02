@@ -9,8 +9,8 @@ export const vaultGuardAbi = [
         components: [
           { name: "owner", type: "address" },
           { name: "authorizedSigners", type: "address[]" },
-          { name: "encryptedWeights", type: "bytes" },
-          { name: "encryptedThresholds", type: "bytes" },
+          { name: "encryptedTargetWeights", type: "uint256[]" },
+          { name: "encryptedDeviation", type: "uint256" },
           { name: "maxSlippageBps", type: "uint16" },
           { name: "rebalanceDeviationBps", type: "uint16" },
           { name: "targetWeightsBps", type: "uint16[]" },
@@ -47,6 +47,58 @@ export const vaultGuardAbi = [
   },
   {
     type: "function",
+    name: "encryptedBalanceOf",
+    stateMutability: "view",
+    inputs: [
+      { name: "vault", type: "address" },
+      { name: "token", type: "address" },
+      {
+        name: "permission",
+        type: "tuple",
+        components: [
+          { name: "publicKey", type: "bytes32" },
+          { name: "signature", type: "bytes" }
+        ]
+      }
+    ],
+    outputs: [{ name: "", type: "string" }]
+  },
+  {
+    type: "function",
+    name: "getEncryptedTargetWeights",
+    stateMutability: "view",
+    inputs: [
+      { name: "vault", type: "address" },
+      {
+        name: "permission",
+        type: "tuple",
+        components: [
+          { name: "publicKey", type: "bytes32" },
+          { name: "signature", type: "bytes" }
+        ]
+      }
+    ],
+    outputs: [{ name: "", type: "string[]" }]
+  },
+  {
+    type: "function",
+    name: "getEncryptedDeviation",
+    stateMutability: "view",
+    inputs: [
+      { name: "vault", type: "address" },
+      {
+        name: "permission",
+        type: "tuple",
+        components: [
+          { name: "publicKey", type: "bytes32" },
+          { name: "signature", type: "bytes" }
+        ]
+      }
+    ],
+    outputs: [{ name: "", type: "string" }]
+  },
+  {
+    type: "function",
     name: "checkAndExecuteRebalancing",
     stateMutability: "nonpayable",
     inputs: [{ name: "vault", type: "address" }],
@@ -56,7 +108,20 @@ export const vaultGuardAbi = [
     type: "function",
     name: "executePayroll",
     stateMutability: "nonpayable",
-    inputs: [{ name: "vault", type: "address" }],
+    inputs: [
+      { name: "vault", type: "address" },
+      {
+        name: "transfers",
+        type: "tuple[]",
+        components: [
+          { name: "vault", type: "address" },
+          { name: "recipientDiversifier", type: "bytes32" },
+          { name: "recipientPk", type: "bytes32" },
+          { name: "metadata", type: "bytes" },
+          { name: "encryptedAmount", type: "bytes32" }
+        ]
+      }
+    ],
     outputs: []
   }
 ] as const;

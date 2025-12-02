@@ -4,6 +4,9 @@ pragma solidity ^0.8.23;
 import "./interfaces/IERC20.sol";
 import "./interfaces/IPhantomSwap.sol";
 import "./PayrollEngine.sol";
+import "./interfaces/IZecBridge.sol";
+import {FHE, euint128, inEuint128} from "@fhenixprotocol/contracts/FHE.sol";
+import {Permission, Permissioned} from "@fhenixprotocol/contracts/access/Permissioned.sol";
 
 interface IThresholdEngine {
     function shouldRebalance(
@@ -21,14 +24,14 @@ interface IThresholdEngine {
     ) external view returns (IPhantomSwap.Order[] memory);
 }
 
-contract VaultGuard {
+contract VaultGuard is Permissioned {
     uint256 internal constant BPS_DENOMINATOR = 10_000;
 
     struct VaultConfig {
         address owner;
         address[] authorizedSigners;
-        bytes encryptedWeights;
-        bytes encryptedThresholds;
+        euint128[] encryptedTargetWeights;
+        euint128 encryptedDeviation;
         uint16 maxSlippageBps;
         uint16 rebalanceDeviationBps;
         uint16[] targetWeightsBps;
@@ -46,9 +49,11 @@ contract VaultGuard {
     address public immutable thresholdEngine;
     PayrollEngine public immutable payrollEngine;
     IPhantomSwap public phantomSwap;
+    IZecBridge public zecBridge;
 
     mapping(address => VaultConfig) private _vaults;
     mapping(address => mapping(address => uint256)) private _vaultBalances;
+    mapping(address => mapping(address => euint128)) private _encryptedBalances;
     mapping(address => address[]) private _vaultTokens;
     mapping(address => mapping(address => bool)) private _tokenTracked;
     mapping(address => bytes32[]) private _auditLog;
@@ -74,20 +79,22 @@ contract VaultGuard {
         _;
     }
 
-    constructor(address _thresholdEngine, PayrollEngine _payrollEngine, IPhantomSwap _phantomSwap) {
+    constructor(address _thresholdEngine, PayrollEngine _payrollEngine, IPhantomSwap _phantomSwap, IZecBridge _zecBridge) {
         require(_thresholdEngine != address(0), "VaultGuard:threshold-zero");
         require(address(_payrollEngine) != address(0), "VaultGuard:payroll-zero");
         require(address(_phantomSwap) != address(0), "VaultGuard:phantom-zero");
+        require(address(_zecBridge) != address(0), "VaultGuard:zec-zero");
         thresholdEngine = _thresholdEngine;
         payrollEngine = _payrollEngine;
         phantomSwap = _phantomSwap;
+        zecBridge = _zecBridge;
         payrollEngine.configureVault(address(this));
     }
 
     function initializeVault(
         address[] calldata authorizedSigners,
-        bytes calldata encryptedWeights,
-        bytes calldata encryptedThresholds,
+        inEuint128[] calldata encryptedWeights,
+        inEuint128 calldata encryptedThresholdDeviation,
         uint16[] calldata targetWeightsBps,
         uint16 rebalanceDeviationBps,
         uint16 maxSlippageBps,
@@ -99,8 +106,11 @@ contract VaultGuard {
 
         config.owner = msg.sender;
         config.authorizedSigners = authorizedSigners;
-        config.encryptedWeights = encryptedWeights;
-        config.encryptedThresholds = encryptedThresholds;
+        config.encryptedTargetWeights = new euint128[](encryptedWeights.length);
+        for (uint256 i = 0; i < encryptedWeights.length; i++) {
+            config.encryptedTargetWeights[i] = FHE.asEuint128(encryptedWeights[i]);
+        }
+        config.encryptedDeviation = FHE.asEuint128(encryptedThresholdDeviation);
         config.targetWeightsBps = targetWeightsBps;
         config.rebalanceDeviationBps = rebalanceDeviationBps;
         config.maxSlippageBps = maxSlippageBps;
@@ -111,7 +121,11 @@ contract VaultGuard {
         return config.vaultId;
     }
 
-    function deposit(address token, uint256 amount) external onlyVaultOwner(msg.sender) {
+    function deposit(
+        address token,
+        uint256 amount,
+        inEuint128 calldata encryptedAmount
+    ) external onlyVaultOwner(msg.sender) {
         require(token != address(0), "VaultGuard:token-zero");
         require(amount > 0, "VaultGuard:amount-zero");
 
@@ -123,16 +137,33 @@ contract VaultGuard {
         }
 
         _vaultBalances[msg.sender][token] += amount;
+        euint128 currentEncrypted = _encryptedBalances[msg.sender][token];
+        euint128 encAmount = FHE.asEuint128(encryptedAmount);
+        if (FHE.isInitialized(currentEncrypted)) {
+            _encryptedBalances[msg.sender][token] = currentEncrypted + encAmount;
+        } else {
+            _encryptedBalances[msg.sender][token] = encAmount;
+        }
 
         emit Deposit(msg.sender, token, amount);
     }
 
-    function withdraw(address token, uint256 amount) external onlyVaultOwner(msg.sender) {
+    function withdraw(
+        address token,
+        uint256 amount,
+        inEuint128 calldata encryptedAmount
+    ) external onlyVaultOwner(msg.sender) {
         uint256 balance = _vaultBalances[msg.sender][token];
         require(balance >= amount, "VaultGuard:insufficient");
 
         _vaultBalances[msg.sender][token] = balance - amount;
         IERC20(token).transfer(msg.sender, amount);
+        euint128 currentEncrypted = _encryptedBalances[msg.sender][token];
+        euint128 encAmount = FHE.asEuint128(encryptedAmount);
+        if (FHE.isInitialized(currentEncrypted)) {
+            euint128 permitted = FHE.select(encAmount.lte(currentEncrypted), encAmount, FHE.asEuint128(0));
+            _encryptedBalances[msg.sender][token] = currentEncrypted - permitted;
+        }
 
         emit Withdrawal(msg.sender, token, amount);
     }
@@ -156,28 +187,31 @@ contract VaultGuard {
         );
     }
 
-    function executePayroll(address vault) external onlyAuthorized(vault) {
+    function executePayroll(address vault, ZecTypes.ShieldedTransfer[] calldata transfers)
+        external
+        onlyAuthorized(vault)
+    {
         PayrollEngine.PayoutInstruction[] memory payouts = payrollEngine.releaseDuePayroll(vault);
-        if (payouts.length == 0) {
-            return;
-        }
+        require(payouts.length == transfers.length, "VaultGuard:transfer-length-mismatch");
 
         for (uint256 i = 0; i < payouts.length; i++) {
             PayrollEngine.PayoutInstruction memory payout = payouts[i];
-            if (payout.amount == 0 || payout.recipient == address(0)) {
+            if (payout.amount == 0) {
                 continue;
             }
+            require(transfers[i].vault == vault, "VaultGuard:transfer-vault-mismatch");
 
             uint256 balance = _vaultBalances[vault][payout.token];
             require(balance >= payout.amount, "VaultGuard:payroll-insufficient");
 
             _vaultBalances[vault][payout.token] = balance - payout.amount;
-            IERC20(payout.token).transfer(payout.recipient, payout.amount);
+            IERC20(payout.token).transfer(address(zecBridge), payout.amount);
+            bytes32 commitment = zecBridge.queueShieldedTransfer(transfers[i]);
             bytes32 logEntry = keccak256(
-                abi.encodePacked(block.timestamp, payout.entryId, payout.recipient, payout.amount)
+                abi.encodePacked(block.timestamp, payout.entryId, commitment, transfers[i].encryptedAmount)
             );
             _auditLog[vault].push(logEntry);
-            emit PayrollExecuted(vault, payout.entryId, payout.recipient, payout.amount);
+            emit PayrollExecuted(vault, payout.entryId, address(0), payout.amount);
             emit AuditLogAppended(vault, logEntry);
         }
     }
@@ -247,8 +281,44 @@ contract VaultGuard {
         emit PhantomSwapUpdated(msg.sender, address(newPhantomSwap));
     }
 
+    function updateZecBridge(IZecBridge newBridge) external {
+        require(address(newBridge) != address(0), "VaultGuard:zec-zero");
+        require(msg.sender == address(payrollEngine), "VaultGuard:update-unauth");
+        zecBridge = newBridge;
+    }
+
     function getVaultConfig(address vault) external view returns (VaultConfig memory) {
         return _vaults[vault];
+    }
+
+    function encryptedBalanceOf(
+        address vault,
+        address token,
+        Permission calldata permission
+    ) external view onlyPermitted(permission, vault) returns (string memory) {
+        return FHE.sealoutput(_encryptedBalances[vault][token], permission.publicKey);
+    }
+
+    function getEncryptedTargetWeights(address vault, Permission calldata permission)
+        external
+        view
+        onlyPermitted(permission, vault)
+        returns (string[] memory outputs)
+    {
+        VaultConfig storage config = _vaults[vault];
+        outputs = new string[](config.encryptedTargetWeights.length);
+        for (uint256 i = 0; i < config.encryptedTargetWeights.length; i++) {
+            outputs[i] = FHE.sealoutput(config.encryptedTargetWeights[i], permission.publicKey);
+        }
+    }
+
+    function getEncryptedDeviation(address vault, Permission calldata permission)
+        external
+        view
+        onlyPermitted(permission, vault)
+        returns (string memory)
+    {
+        return FHE.sealoutput(_vaults[vault].encryptedDeviation, permission.publicKey);
     }
 
     function getVaultTokens(address vault) external view returns (VaultSnapshot[] memory snapshot) {

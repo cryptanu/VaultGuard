@@ -10,6 +10,9 @@
     "contracts:test": "forge test",
     "contracts:build": "forge build",
     "demo": "node demo/run-demo.js"
+  },
+  "dependencies": {
+    "@fhenixprotocol/contracts": "^0.3.1",
+    "@openzeppelin/contracts": "^5.4.0"
   }
 }
-

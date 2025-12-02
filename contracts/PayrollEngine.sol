@@ -94,29 +94,23 @@ contract PayrollEngine {
         }
 
         instructions = new PayoutInstruction[](dueCount);
-        if (dueCount == 0) {
-            return instructions;
-        }
-
         uint256 instructionIndex;
         for (uint256 i = 0; i < entries.length; i++) {
             PayrollEntry storage entry = entries[i];
-            if (!_isDue(entry, timestamp)) {
-                continue;
+            if (_isDue(entry, timestamp)) {
+                entry.lastPaymentTime = uint64(timestamp);
+                instructions[instructionIndex] = PayoutInstruction({
+                    entryId: i,
+                    token: entry.token,
+                    recipient: entry.recipientHint,
+                    amount: entry.amountHint,
+                    encryptedRecipient: entry.encryptedRecipient,
+                    encryptedAmount: entry.encryptedAmount
+                });
+                instructionIndex++;
             }
-
-            entry.lastPaymentTime = uint64(timestamp);
-            instructions[instructionIndex] = PayoutInstruction({
-                entryId: i,
-                token: entry.token,
-                recipient: entry.recipientHint,
-                amount: entry.amountHint,
-                encryptedRecipient: entry.encryptedRecipient,
-                encryptedAmount: entry.encryptedAmount
-            });
-            emit PayrollExecuted(employer, i, entry.recipientHint, entry.amountHint);
-            instructionIndex++;
         }
+        return instructions;
     }
 
     function updatePayroll(
@@ -155,7 +149,7 @@ contract PayrollEngine {
         if (!entry.active) {
             return false;
         }
-        if (entry.recipientHint == address(0) || entry.amountHint == 0) {
+        if (entry.amountHint == 0) {
             return false;
         }
         return timestamp >= entry.lastPaymentTime + entry.frequency;

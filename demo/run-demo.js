@@ -20,6 +20,12 @@ const steps = [
     cwd: root
   },
   {
+    title: "Forge: End-to-End Shielded Payroll",
+    command: "forge",
+    args: ["test", "--match-test", "testEndToEndPayrollFlow"],
+    cwd: root
+  },
+  {
     title: "Dashboard Build",
     command: "npm",
     args: ["run", "build", "--prefix", "dashboard"],

@@ -1,7 +1,7 @@
 [profile.default]
 src = "contracts"
 out = "out"
-libs = ["lib"]
+libs = ["lib", "node_modules"]
 test = "test"
 remappings = ["@openzeppelin/contracts=lib/openzeppelin-contracts/contracts"]
 solc_version = "0.8.23"

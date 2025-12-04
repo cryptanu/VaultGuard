@@ -1,65 +1,54 @@
 <!-- 98612463-87a7-4b46-8fac-bc0d964776db cf070964-0c0b-4a73-8484-0b0b70b2b647 -->
-# VaultGuard 8-Hour Sprint
+# VaultGuard Streaming Roadmap
 
-## Objectives
-- Ship hackathon-ready MVP covering encrypted vault config, automated rebalancing stub, payroll scheduling, and dashboard integration.
-- Align backend contracts with provided React dashboard for coherent demo and narrative.
-- Prepare lightweight testing and demo artifacts (screens, scripts, talking points).
-- Extend confidentiality with production FHERC20 support and ZEC settlement rails.
+## Mission
+Deliver a production-ready privacy vault that pairs FHE-encrypted treasury management with shielded Zcash settlement and intent-driven automation. `VaultGuard` now focuses on encrypted drip payroll streams instead of one-off payouts.
 
-## Deliverables
-- Smart contracts in `contracts/` with deployment script & Foundry tests.
-- Frontend integration in `dashboard/` (React) wired to contract ABIs and mock data.
-- Demo runbook: setup, flows (rebalance trigger, payroll execution, compliance export).
-- Fhenix-based encrypted asset handling (FHERC20 + CoFHE helpers).
-- Wrapped ZEC bridge for shielded payouts.
-- Foundry end-to-end suite exercising encrypted payroll and shielded settlement.
+## Current State
+- **Contracts**: `VaultGuard.sol` + `PayrollEngine.sol` support encrypted balances and streaming payroll claims. Events, audit logs, and tests (unit + E2E) are green.
+- **Settlement**: ZEC transfers routed to `MockZecBridge`; awaiting connection to a live shielded bridge.
+- **Frontend**: React dashboard exposes mock deposit/schedule/claim forms using updated ABI, but UX is barebones and lacks stream introspection.
+- **Tooling**: Foundry + Vite builds passing (`forge test`, `npm run build --prefix dashboard`). Deployment script targets Sepolia/Base.
 
-## Timeline (8 Hours)
-- **Hour 0-1 – Architecture & Env Setup**
-  - Confirm toolchain (`forge`, `npm`, Fhenix SDK) and configure `.env` stubs.
-  - Finalize contract interfaces (`VaultGuard.sol`, `ThresholdEngine.sol`, `PayrollEngine.sol`, `AAAccount.sol`).
-- **Hour 1-3 – Smart Contracts MVP**
-  - Implement minimal viable logic with homomorphic placeholders & PhantomSwap/Zcash hooks.
-  - Write Foundry unit tests focusing on vault init, deposit, payroll scheduling.
-  - Draft deployment scripts in `scripts/VaultGuard.s.sol`.
-- **Hour 3-4 – Contract Integration Tests & Stubs**
-  - Run `forge test`; capture outputs for submission appendix.
-  - Produce mock encrypted blobs & placeholder addresses for frontend.
-- **Hour 4-6 – Frontend Adaptation**
-  - Integrate Fhenix SDK + wagmi/ethers in `dashboard/`.
-  - Wire views to contract ABIs, add state toggles (encrypted vs decrypted), hook up payroll actions.
-  - Implement minimal compliance export modal with dummy data.
-- **Hour 6-7 – Demo Workflow & Automation**
-  - Create `demo/` scripts: CLI or script to simulate threshold breach + payroll execution.
-  - Generate screenshots/video snippet via `npm run dev:dashboard` demo path.
-- **Hour 7-8 – Polish & Submission Prep**
-  - Write README + architecture summary referencing `/Users/cryptanu/Library/Containers/ru.keepcoder.Telegram/Data/tmp/vaultguard_architecture.md`.
-  - Prepare pitch bullets, risks, roadmap next steps.
-  - Final QA, ensure repo clean, bundle artifacts for submission.
+## Strategic Objectives
+1. **Stream Experience**
+   - Visualize active payroll streams (encrypted balances, accrued amounts).
+   - Add recipient portal (signature-gated) to request claims.
+   - Provide status, error handling, and audit log explorer.
 
-## Implementation Todos
-- `setup-env`: Toolchain check, env files, dependency install. ✅
-- `contracts-mvp`: Implement core contracts + Foundry tests. ✅
-- `frontend-integration`: Connect dashboard to contracts & SDK mocks. ✅
-- `demo-assets`: Produce runbook, scripts, screenshots. ✅
-- `submission-pack`: Final README, pitch notes, cleanup. ✅
-- `publish-repo`: Stage, commit, and push repo to `github.com/cryptanu/VaultGuard`. ✅
-- `fherc20-impl`: Build FHERC20 + CoFHE helper layer using `@fhenixprotocol/contracts`. ✅
-- `vault-cofhe-integration`: Wire encrypted balances/weights into `VaultGuard`, update ABI & tests. ✅
-- `zec-settlement`: Implement wrapped ZEC bridge + shielded payroll settlement. ✅
-- `tests-docs-refresh`: Expand test coverage, docs, and demo assets post-ZEC integration. ✅
+2. **Settlement Hardening**
+   - Integrate real Zcash bridge API, implement retries and commitment proofs.
+   - Export encrypted audit logs with compliance metadata.
+   - Document key management (diversifiers, viewing keys) for operators.
 
-### To-dos
+3. **Intent Layer**
+   - Prototype NEAR intent that triggers `claimPayrollStream` without revealing plaintext.
+   - Model cross-domain security guarantees; add tests/docs for intent flow.
 
-- [x] Install deps, configure env stubs
-- [x] Implement core contracts + Foundry tests
-- [x] Wire dashboard to contracts/SDK
-- [x] Create demo scripts + capture assets
-- [x] Finalize README, pitch notes
-- [x] Commit & push to GitHub
-- [x] Build FHERC20 + CoFHE helper layer
-- [x] Integrate FHERC20 & CoFHE into vault logic
-- [x] Implement wrapped ZEC settlement
-- [x] Refresh tests/docs/demo after FHE & ZEC integration
+4. **Deployment & Ops**
+   - Parameterize Foundry scripts for dev/stage/prod environments.
+   - Provide runbooks for vault initialization, stream setup, and recovery.
+   - Add monitoring hooks for key events (stream created, claim executed, bridge settlement).
+
+5. **Submission & Narrative**
+   - Refresh README, architecture doc, and pitch deck with streaming emphasis.
+   - Record end-to-end demo (encrypted setup through shielded payout).
+   - Prepare FAQ covering FHE leak mitigations and bridge risks.
+
+## Execution Tracks (Todos)
+- `stream-ux`: redesign dashboard (portfolio + stream tables, claim workflow, encrypted previews).
+- `zec-integration`: swap `MockZecBridge` for live bridge client, add settlement confirmation.
+- `near-intent`: build intent adapter + example script, document privacy guarantees.
+- `ops-automation`: extend deploy script, env templates, CI coverage.
+- `submission-assets`: finalize docs, demo video, and pitch narrative.
+
+## Suggested Timeline (3-day sprint)
+1. **Day 1 – UX & Contract Polish**
+   - Lock ABI changes, refresh tests, start front-end redesign.
+2. **Day 2 – Bridge & Intent Integration**
+   - Implement bridge client, validate E2E, prototype NEAR intent.
+3. **Day 3 – Operationalization & Collateral**
+   - Document runbooks, integrate monitoring, produce submission assets.
+
+Progress will be tracked via the execution tracks above; update this roadmap as milestones close or scope shifts.
 

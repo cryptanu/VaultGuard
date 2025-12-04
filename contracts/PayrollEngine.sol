@@ -1,50 +1,37 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import "./interfaces/IERC20.sol";
+import {FHE, euint128, inEuint128} from "@fhenixprotocol/contracts/FHE.sol";
 
 contract PayrollEngine {
-    struct PayrollEntry {
+    struct PayrollStream {
         bytes32 encryptedRecipient;
-        bytes32 encryptedAmount;
+        euint128 encryptedRatePerSecond;
         address payable recipientHint;
-        uint256 amountHint;
+        uint256 rateHintPerSecond;
         address token;
-        uint64 frequency;
-        uint64 lastPaymentTime;
+        uint64 startTime;
+        uint64 lastWithdrawalTime;
+        uint64 endTime;
         bool active;
-    }
-
-    struct PayoutInstruction {
-        uint256 entryId;
-        address token;
-        address recipient;
-        uint256 amount;
-        bytes32 encryptedRecipient;
-        bytes32 encryptedAmount;
     }
 
     address public vaultGuard;
     bool public vaultConfigured;
 
-    mapping(address => PayrollEntry[]) private _schedules;
+    mapping(address => PayrollStream[]) private _streams;
 
-    event PayrollScheduled(address indexed employer, uint256 indexed entryId, address token, uint64 frequency);
-    event PayrollUpdated(address indexed employer, uint256 indexed entryId, bytes32 recipientHash);
-    event PayrollDeactivated(address indexed employer, uint256 indexed entryId);
-    event PayrollExecuted(address indexed employer, uint256 indexed entryId, address recipient, uint256 amount);
+    event PayrollScheduled(address indexed employer, uint256 indexed streamId, address token, uint64 streamDuration);
+    event PayrollUpdated(address indexed employer, uint256 indexed streamId, bytes32 recipientHash);
+    event PayrollDeactivated(address indexed employer, uint256 indexed streamId);
+    event PayrollExecuted(address indexed employer, uint256 indexed streamId, address recipient, uint256 amount);
 
     modifier onlyVault() {
         require(msg.sender == vaultGuard, "PayrollEngine:only-vault");
         _;
     }
 
-    constructor(address _vaultGuard) {
-        if (_vaultGuard != address(0)) {
-            vaultGuard = _vaultGuard;
-            vaultConfigured = true;
-        }
-    }
+    constructor() {}
 
     function configureVault(address _vaultGuard) external {
         require(!vaultConfigured, "PayrollEngine:configured");
@@ -56,103 +43,75 @@ contract PayrollEngine {
     function schedulePayroll(
         address employer,
         bytes32 encryptedRecipient,
-        bytes32 encryptedAmount,
+        inEuint128 calldata encryptedRatePerSecond,
         address payable recipientHint,
-        uint256 amountHint,
+        uint256 rateHintPerSecond,
         address token,
-        uint64 frequencySeconds
-    ) external onlyVault returns (uint256 entryId) {
-        PayrollEntry memory entry = PayrollEntry({
+        uint64 streamDuration
+    ) external onlyVault returns (uint256 streamId) {
+        require(rateHintPerSecond > 0, "PayrollEngine:rate-zero");
+        require(token != address(0), "PayrollEngine:token-zero");
+
+        uint64 startTime = uint64(block.timestamp);
+        uint64 endTime = streamDuration == 0 ? 0 : startTime + streamDuration;
+
+        PayrollStream memory stream = PayrollStream({
             encryptedRecipient: encryptedRecipient,
-            encryptedAmount: encryptedAmount,
+            encryptedRatePerSecond: FHE.asEuint128(encryptedRatePerSecond),
             recipientHint: recipientHint,
-            amountHint: amountHint,
+            rateHintPerSecond: rateHintPerSecond,
             token: token,
-            frequency: frequencySeconds,
-            lastPaymentTime: uint64(block.timestamp),
+            startTime: startTime,
+            lastWithdrawalTime: startTime,
+            endTime: endTime,
             active: true
         });
 
-        _schedules[employer].push(entry);
-        entryId = _schedules[employer].length - 1;
-        emit PayrollScheduled(employer, entryId, token, frequencySeconds);
-    }
-
-    function releaseDuePayroll(address employer)
-        external
-        onlyVault
-        returns (PayoutInstruction[] memory instructions)
-    {
-        PayrollEntry[] storage entries = _schedules[employer];
-        uint256 dueCount;
-        uint256 timestamp = block.timestamp;
-
-        for (uint256 i = 0; i < entries.length; i++) {
-            if (_isDue(entries[i], timestamp)) {
-                dueCount++;
-            }
-        }
-
-        instructions = new PayoutInstruction[](dueCount);
-        uint256 instructionIndex;
-        for (uint256 i = 0; i < entries.length; i++) {
-            PayrollEntry storage entry = entries[i];
-            if (_isDue(entry, timestamp)) {
-                entry.lastPaymentTime = uint64(timestamp);
-                instructions[instructionIndex] = PayoutInstruction({
-                    entryId: i,
-                    token: entry.token,
-                    recipient: entry.recipientHint,
-                    amount: entry.amountHint,
-                    encryptedRecipient: entry.encryptedRecipient,
-                    encryptedAmount: entry.encryptedAmount
-                });
-                instructionIndex++;
-            }
-        }
-        return instructions;
+        _streams[employer].push(stream);
+        streamId = _streams[employer].length - 1;
+        emit PayrollScheduled(employer, streamId, token, streamDuration);
     }
 
     function updatePayroll(
         address employer,
-        uint256 entryId,
+        uint256 streamId,
         bytes32 encryptedRecipient,
-        bytes32 encryptedAmount,
+        inEuint128 calldata encryptedRatePerSecond,
         address payable recipientHint,
-        uint256 amountHint,
+        uint256 rateHintPerSecond,
         bool active
     ) external onlyVault {
-        PayrollEntry storage entry = _schedules[employer][entryId];
-        entry.encryptedRecipient = encryptedRecipient;
-        entry.encryptedAmount = encryptedAmount;
-        entry.recipientHint = recipientHint;
-        entry.amountHint = amountHint;
-        entry.active = active;
-        emit PayrollUpdated(employer, entryId, encryptedRecipient);
+        PayrollStream storage stream = _streams[employer][streamId];
+        stream.encryptedRecipient = encryptedRecipient;
+        stream.encryptedRatePerSecond = FHE.asEuint128(encryptedRatePerSecond);
+        stream.recipientHint = recipientHint;
+        stream.rateHintPerSecond = rateHintPerSecond;
+        stream.active = active;
+        emit PayrollUpdated(employer, streamId, encryptedRecipient);
     }
 
-    function deactivatePayroll(address employer, uint256 entryId) external onlyVault {
-        PayrollEntry storage entry = _schedules[employer][entryId];
-        entry.active = false;
-        emit PayrollDeactivated(employer, entryId);
+    function deactivatePayroll(address employer, uint256 streamId) external onlyVault {
+        PayrollStream storage stream = _streams[employer][streamId];
+        stream.active = false;
+        emit PayrollDeactivated(employer, streamId);
+    }
+
+    function markStreamWithdrawal(address employer, uint256 streamId, uint64 withdrawalTime) external onlyVault {
+        PayrollStream storage stream = _streams[employer][streamId];
+        require(stream.active, "PayrollEngine:inactive");
+        require(withdrawalTime >= stream.lastWithdrawalTime, "PayrollEngine:time-rewind");
+        stream.lastWithdrawalTime = withdrawalTime;
+        if (stream.endTime != 0 && withdrawalTime >= stream.endTime) {
+            stream.active = false;
+        }
     }
 
     function getScheduleCount(address employer) external view returns (uint256) {
-        return _schedules[employer].length;
+        return _streams[employer].length;
     }
 
-    function getPayrollEntry(address employer, uint256 entryId) external view returns (PayrollEntry memory) {
-        return _schedules[employer][entryId];
-    }
-
-    function _isDue(PayrollEntry storage entry, uint256 timestamp) private view returns (bool) {
-        if (!entry.active) {
-            return false;
-        }
-        if (entry.amountHint == 0) {
-            return false;
-        }
-        return timestamp >= entry.lastPaymentTime + entry.frequency;
+    function getPayrollStream(address employer, uint256 streamId) external view returns (PayrollStream memory) {
+        return _streams[employer][streamId];
     }
 }
 

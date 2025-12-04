@@ -1,6 +1,20 @@
 export const vaultGuardAbi = [
   {
     type: "function",
+    name: "payrollEngine",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }]
+  },
+  {
+    type: "function",
+    name: "zecBridge",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }]
+  },
+  {
+    type: "function",
     name: "getVaultConfig",
     stateMutability: "view",
     inputs: [{ name: "vault", type: "address" }],
@@ -9,13 +23,6 @@ export const vaultGuardAbi = [
         components: [
           { name: "owner", type: "address" },
           { name: "authorizedSigners", type: "address[]" },
-          { name: "encryptedTargetWeights", type: "uint256[]" },
-          { name: "encryptedDeviation", type: "uint256" },
-          { name: "maxSlippageBps", type: "uint16" },
-          { name: "rebalanceDeviationBps", type: "uint16" },
-          { name: "targetWeightsBps", type: "uint16[]" },
-          { name: "lastRebalance", type: "uint64" },
-          { name: "autoExecute", type: "bool" },
           { name: "vaultId", type: "bytes32" }
         ],
         type: "tuple"
@@ -31,19 +38,11 @@ export const vaultGuardAbi = [
       {
         components: [
           { name: "token", type: "address" },
-          { name: "encryptedBalance", type: "bytes32" },
-          { name: "targetWeightBps", type: "uint16" }
+          { name: "encryptedBalance", type: "bytes32" }
         ],
         type: "tuple[]"
       }
     ]
-  },
-  {
-    type: "function",
-    name: "getEncryptedAuditLog",
-    stateMutability: "view",
-    inputs: [{ name: "vault", type: "address" }],
-    outputs: [{ name: "", type: "bytes32[]" }]
   },
   {
     type: "function",
@@ -65,44 +64,35 @@ export const vaultGuardAbi = [
   },
   {
     type: "function",
-    name: "getEncryptedTargetWeights",
+    name: "getEncryptedAuditLog",
     stateMutability: "view",
-    inputs: [
-      { name: "vault", type: "address" },
-      {
-        name: "permission",
-        type: "tuple",
-        components: [
-          { name: "publicKey", type: "bytes32" },
-          { name: "signature", type: "bytes" }
-        ]
-      }
-    ],
-    outputs: [{ name: "", type: "string[]" }]
-  },
-  {
-    type: "function",
-    name: "getEncryptedDeviation",
-    stateMutability: "view",
-    inputs: [
-      { name: "vault", type: "address" },
-      {
-        name: "permission",
-        type: "tuple",
-        components: [
-          { name: "publicKey", type: "bytes32" },
-          { name: "signature", type: "bytes" }
-        ]
-      }
-    ],
-    outputs: [{ name: "", type: "string" }]
-  },
-  {
-    type: "function",
-    name: "checkAndExecuteRebalancing",
-    stateMutability: "nonpayable",
     inputs: [{ name: "vault", type: "address" }],
-    outputs: []
+    outputs: [{ name: "", type: "bytes32[]" }]
+  },
+  {
+    type: "function",
+    name: "getStreamCount",
+    stateMutability: "view",
+    inputs: [{ name: "vault", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }]
+  },
+  {
+    type: "function",
+    name: "getStreamMetadata",
+    stateMutability: "view",
+    inputs: [
+      { name: "vault", type: "address" },
+      { name: "streamId", type: "uint256" }
+    ],
+    outputs: [
+      { name: "encryptedRecipient", type: "bytes32" },
+      { name: "token", type: "address" },
+      { name: "rateHintPerSecond", type: "uint256" },
+      { name: "startTime", type: "uint64" },
+      { name: "lastWithdrawalTime", type: "uint64" },
+      { name: "endTime", type: "uint64" },
+      { name: "active", type: "bool" }
+    ]
   },
   {
     type: "function",
@@ -128,23 +118,40 @@ export const vaultGuardAbi = [
     stateMutability: "nonpayable",
     inputs: [
       { name: "encryptedRecipient", type: "bytes32" },
-      { name: "encryptedAmount", type: "bytes32" },
+      {
+        name: "encryptedRatePerSecond",
+        type: "tuple",
+        components: [
+          { name: "data", type: "bytes" },
+          { name: "securityZone", type: "int32" }
+        ]
+      },
       { name: "recipientHint", type: "address" },
-      { name: "amountHint", type: "uint256" },
+      { name: "rateHintPerSecond", type: "uint256" },
       { name: "token", type: "address" },
-      { name: "frequency", type: "uint64" }
+      { name: "streamDuration", type: "uint64" }
     ],
-    outputs: [{ name: "entryId", type: "uint256" }]
+    outputs: [{ name: "streamId", type: "uint256" }]
   },
   {
     type: "function",
-    name: "executePayroll",
+    name: "claimPayrollStream",
     stateMutability: "nonpayable",
     inputs: [
       { name: "vault", type: "address" },
+      { name: "streamId", type: "uint256" },
+      { name: "amountHint", type: "uint256" },
       {
-        name: "transfers",
-        type: "tuple[]",
+        name: "encryptedAmount",
+        type: "tuple",
+        components: [
+          { name: "data", type: "bytes" },
+          { name: "securityZone", type: "int32" }
+        ]
+      },
+      {
+        name: "transfer",
+        type: "tuple",
         components: [
           { name: "vault", type: "address" },
           { name: "recipientDiversifier", type: "bytes32" },

@@ -1,87 +1,65 @@
-import React, { useMemo, useState } from "react";
-import {
-  Activity,
-  ArrowRightLeft,
+import React, { useState, useEffect } from 'react';
+import { 
+  Shield, 
+  Lock, 
+  Unlock, 
+  Eye, 
+  EyeOff, 
+  Wallet, 
+  ArrowRightLeft, 
+  Users, 
+  FileText, 
+  Activity, 
   CheckCircle2,
   Copy,
-  Eye,
-  EyeOff,
-  FileText,
   Ghost,
-  Lock,
-  Settings,
-  Shield,
-  Users,
-  Wallet
-} from "lucide-react";
-import {
-  useAccount,
-  useConnect,
-  useDisconnect,
-  useSwitchChain,
-  useWriteContract
-} from "wagmi";
-import { keccak256, padHex, parseUnits, stringToBytes, stringToHex, toHex } from "viem";
+  Waves,
+  Zap,
+  ArrowRight,
+  Droplets
+} from 'lucide-react';
 
-import { fhenixHelium } from "./lib/chain";
-import { useVaultGuard } from "./hooks/useVaultGuard";
-import { env } from "./config/env";
-import { vaultGuardAbi } from "./abis/vaultGuard";
+// --- Utility Components & Types ---
 
-type FHEValueProps = {
-  value: number | string;
+// 1. FHE Value Component: Handles Encrypted vs Decrypted states
+interface FHEValueProps {
+  value: string | number;
   label?: string;
   isPrivate: boolean;
   isCurrency?: boolean;
+  isRate?: boolean; // New prop for formatting stream rates
   className?: string;
-};
+}
 
-const FHEValue: React.FC<FHEValueProps> = ({
-  value,
-  label,
-  isPrivate,
-  isCurrency = false,
-  className = ""
-}) => {
-  const numericValue = typeof value === "number" ? value : Number(value);
-  const displayValue = isCurrency && typeof value === "number"
-    ? new Intl.NumberFormat("en-US", {
-        style: "currency",
-        currency: "USD",
-        maximumFractionDigits: 2
-      }).format(value)
-    : typeof value === "number"
-      ? value.toLocaleString()
-      : value;
-
-  const obscured = useMemo(() => {
-    const stringValue =
-      typeof value === "string" ? value : value.toLocaleString();
-    return "•".repeat(Math.min(stringValue.length, 10));
-  }, [value]);
+const FHEValue: React.FC<FHEValueProps> = ({ value, label, isPrivate, isCurrency = false, isRate = false, className = "" }) => {
+  let displayValue = value;
+  
+  if (!isPrivate) {
+    if (isCurrency) {
+      displayValue = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value));
+    } else if (isRate) {
+      displayValue = `${value}/sec`;
+    }
+  }
 
   return (
     <div className={`flex flex-col ${className}`}>
-      {label && <span className="text-xs text-slate-400 mb-1">{label}</span>}
-      <div
-        className={`relative transition-all duration-300 ${isPrivate ? "text-purple-400" : "text-white"}`}
-      >
+      {label && <span className="text-xs text-slate-400 mb-1 font-medium uppercase tracking-wider">{label}</span>}
+      <div className={`relative transition-all duration-300 ${isPrivate ? 'text-purple-400' : 'text-white'}`}>
         {isPrivate ? (
-          <div
-            className="flex items-center gap-2 select-none group cursor-help"
-            title="Encrypted on-chain"
-          >
+          <div className="flex items-center gap-2 select-none group cursor-help" title="Encrypted on-chain">
             <Lock className="w-3 h-3" />
             <span className="blur-sm tracking-wider font-mono">
-              {obscured}
+              {typeof value === 'string' ? '•'.repeat(Math.min(value.length, 8)) : '••••••'}
             </span>
-            <span className="text-xs opacity-50 font-mono hidden group-hover:inline-block text-purple-300">
-              0x...enc
+            {/* Visual hint that this is FHE data */}
+            <span className="text-[10px] uppercase opacity-40 font-mono hidden group-hover:inline-block text-purple-300 border border-purple-800 px-1 rounded">
+              FHE
             </span>
           </div>
         ) : (
-          <span className="font-medium tracking-tight animate-in fade-in duration-500">
-            {isCurrency && !Number.isNaN(numericValue) ? displayValue : displayValue}
+          <span className="font-medium tracking-tight animate-in fade-in duration-500 font-mono">
+            {displayValue}
           </span>
         )}
       </div>
@@ -89,524 +67,344 @@ const FHEValue: React.FC<FHEValueProps> = ({
   );
 };
 
-type ButtonProps = {
-  children: React.ReactNode;
-  variant?: "primary" | "secondary" | "outline" | "ghost";
-  className?: string;
-  onClick?: () => void;
-  disabled?: boolean;
-};
+// 2. Button Component
+const Button = ({ children, variant = 'primary', className = "", onClick, disabled, size = 'md' }: any) => {
+  const baseStyle = "rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed";
+  
+  const sizes = {
+    sm: "px-3 py-1.5 text-xs",
+    md: "px-4 py-2 text-sm",
+    lg: "px-6 py-3 text-base"
+  };
 
-const Button: React.FC<ButtonProps> = ({
-  children,
-  variant = "primary",
-  className = "",
-  onClick,
-  disabled
-}) => {
-  const baseStyle =
-    "px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed";
-  const variants: Record<NonNullable<ButtonProps["variant"]>, string> = {
+  const variants = {
     primary: "bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-900/20",
     secondary: "bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700",
     outline: "border border-slate-600 text-slate-400 hover:text-white hover:border-slate-500",
-    ghost: "text-slate-400 hover:text-white hover:bg-slate-800/50"
+    ghost: "text-slate-400 hover:text-white hover:bg-slate-800/50",
+    zcash: "bg-yellow-500 hover:bg-yellow-400 text-black font-bold shadow-lg shadow-yellow-900/20"
   };
-
+  
   return (
-    <button
-      onClick={onClick}
+    <button 
+      onClick={onClick} 
       disabled={disabled}
-      className={`${baseStyle} ${variants[variant]} ${className}`}
+      className={`${baseStyle} ${sizes[size as keyof typeof sizes]} ${variants[variant as keyof typeof variants]} ${className}`}
     >
       {children}
     </button>
   );
 };
 
-type DashboardAsset = {
+// --- Streaming Logic Components ---
+
+// Simulated Stream Data Interface
+interface Stream {
+  id: string;
+  recipient: string;
   token: string;
-  symbol: string;
-  name: string;
-  encryptedBalance: string;
-  allocation: number;
-};
+  flowRate: number; // Tokens per second
+  accrued: number;
+  status: 'active' | 'paused' | 'completed';
+  startDate: string;
+}
 
-type DashboardViewProps = {
-  isPrivate: boolean;
-  assets: DashboardAsset[];
-  onShieldAssets: () => void;
-  isContractBacked: boolean;
-};
+// VIEW: Treasury Overview (Simplified Dashboard)
+const TreasuryView = ({ isPrivate }: { isPrivate: boolean }) => {
+  const assets = [
+    { symbol: 'USDC', name: 'USD Coin', balance: 250000, price: 1, allocation: 60 },
+    { symbol: 'ETH', name: 'Ethereum', balance: 45.2, price: 2300, allocation: 25 },
+    { symbol: 'ZEC', name: 'Zcash', balance: 1500, price: 30, allocation: 15 },
+  ];
 
-const DashboardView: React.FC<DashboardViewProps> = ({
-  isPrivate,
-  assets,
-  onShieldAssets,
-  isContractBacked
-}) => {
-  const totalDisplay = isPrivate ? "Encrypted" : "Private";
+  const totalValue = assets.reduce((acc, asset) => acc + (asset.balance * asset.price), 0);
 
   return (
     <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-xl backdrop-blur-sm">
-          <div className="flex justify-between items-start mb-4">
-            <div className="p-2 bg-purple-500/10 rounded-lg text-purple-400">
-              <Shield className="w-6 h-6" />
-            </div>
-            <span
-              className={`text-xs px-2 py-1 rounded-full ${
-                isPrivate
-                  ? "bg-purple-900/30 text-purple-300 border border-purple-800"
-                  : "bg-green-900/30 text-green-300 border border-green-800"
-              }`}
-            >
-              {isPrivate ? "Encrypted View" : "Decrypted View"}
-            </span>
-          </div>
-          <div className="flex items-center justify-between text-xs text-slate-500">
-            <span>{isContractBacked ? "Live on-chain data" : "Demo dataset"}</span>
-            {isContractBacked && <span className="text-green-400 font-medium">Connected</span>}
-          </div>
-          <FHEValue
-            label="Total Vault Value"
-            value={totalDisplay}
-            isPrivate={isPrivate}
-            className="text-3xl font-bold"
-          />
+      {/* Hero Stats */}
+      <div className="bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 p-8 rounded-2xl relative overflow-hidden">
+        {/* Background Pattern */}
+        <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
+          <Shield className="w-64 h-64 text-purple-500" />
         </div>
 
-        <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-xl backdrop-blur-sm">
-          <div className="flex justify-between items-start mb-4">
-            <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400">
-              <Activity className="w-6 h-6" />
-            </div>
-          </div>
-          <div className="text-slate-400 text-sm mb-1">Next Rebalance Trigger</div>
-          <div className="text-xl font-semibold text-white">
-            {isPrivate ? (
-              <div className="flex items-center gap-2 text-purple-400">
-                <Lock className="w-4 h-4" /> <span>Threshold Encrypted</span>
+        <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 gap-8 items-end">
+          <div>
+            <div className="flex items-center gap-2 mb-4">
+              <div className="p-2 bg-purple-500/10 rounded-lg text-purple-400">
+                <Shield className="w-5 h-5" />
               </div>
-            ) : (
-              <span>± 5.0% Deviation</span>
-            )}
+              <span className="text-sm font-medium text-slate-400">FHE Encrypted Treasury</span>
+            </div>
+            <FHEValue 
+              label="Total Assets Under Management" 
+              value={totalValue} 
+              isPrivate={isPrivate} 
+              isCurrency={true} 
+              className="text-4xl font-bold" 
+            />
+          </div>
+          
+          <div className="flex gap-4">
+            <div className="flex-1 bg-slate-900/80 border border-slate-700 p-4 rounded-xl">
+               <div className="text-xs text-slate-500 mb-1 uppercase tracking-wider">Active Streams</div>
+               <div className="text-2xl font-bold text-white flex items-center gap-2">
+                 {isPrivate ? <Lock className="w-4 h-4 text-purple-400" /> : '8'}
+                 <span className="text-sm font-normal text-slate-500">Recipients</span>
+               </div>
+            </div>
+            <div className="flex-1 bg-slate-900/80 border border-slate-700 p-4 rounded-xl">
+               <div className="text-xs text-slate-500 mb-1 uppercase tracking-wider">Monthly Outflow</div>
+               <FHEValue value={42000} isPrivate={isPrivate} isCurrency={true} className="text-xl font-bold" />
+            </div>
           </div>
         </div>
-
-        <button
-          type="button"
-          onClick={onShieldAssets}
-          className="bg-slate-900/50 border border-slate-800 p-6 rounded-xl backdrop-blur-sm flex flex-col justify-center items-center text-center hover:bg-slate-800/50 transition-colors group"
-        >
-          <div className="p-3 bg-yellow-500/10 rounded-full text-yellow-500 mb-3 group-hover:scale-110 transition-transform">
-            <Ghost className="w-6 h-6" />
-          </div>
-          <h3 className="font-semibold text-white">Shield Assets</h3>
-          <p className="text-xs text-slate-400 mt-1">Bridge transparent assets to Zcash pool</p>
-        </button>
       </div>
 
-      <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-        <div className="p-6 border-b border-slate-800 flex justify-between items-center">
-          <h3 className="font-semibold text-lg text-white">Vault Composition</h3>
-          <Button variant="outline" className="text-xs h-8">
-            Manage Allocation
-          </Button>
-        </div>
-        <div className="p-6 space-y-4">
-          {assets.map((asset) => (
-            <div key={asset.symbol} className="group">
-              <div className="flex justify-between items-end mb-2">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center font-bold text-xs text-slate-300">
-                    {asset.symbol[0]}
-                  </div>
-                  <div>
-                    <div className="font-medium text-white">{asset.name}</div>
-                    <div className="text-xs text-slate-500">{asset.symbol}</div>
-                  </div>
+      {/* Asset Breakdown */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {assets.map((asset) => (
+          <div key={asset.symbol} className="bg-slate-900 border border-slate-800 p-5 rounded-xl flex flex-col justify-between">
+            <div className="flex justify-between items-start mb-4">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${asset.symbol === 'ZEC' ? 'bg-yellow-500/10 text-yellow-500' : 'bg-slate-800 text-slate-300'}`}>
+                  {asset.symbol}
                 </div>
-                <div className="text-right">
-                  <FHEValue
-                      value={asset.encryptedBalance}
-                    isPrivate={isPrivate}
-                    className="font-mono text-sm"
-                  />
-                  <FHEValue
-                    value={`${asset.allocation}%`}
-                    isPrivate={isPrivate}
-                    className="text-xs text-slate-500"
-                  />
+                <div>
+                  <div className="font-bold text-white">{asset.name}</div>
+                  <div className="text-xs text-slate-500">Available to Stream</div>
                 </div>
-              </div>
-              <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all duration-1000 ${
-                    isPrivate ? "bg-purple-900/50 blur-[2px]" : "bg-purple-600 blur-none"
-                  }`}
-                  style={{ width: `${Math.min(100, Math.max(0, asset.allocation))}%` }}
-                />
               </div>
             </div>
-          ))}
-        </div>
+            <div className="space-y-1">
+               <FHEValue value={asset.balance} isPrivate={isPrivate} className="text-xl font-mono font-bold" />
+               <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden mt-2">
+                 <div className={`h-full ${isPrivate ? 'bg-purple-500/50 blur-[1px]' : 'bg-purple-500'}`} style={{ width: `${asset.allocation}%` }} />
+               </div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
 };
 
-type PayrollViewProps = {
-  isPrivate: boolean;
-};
+// VIEW: Streaming Engine (The Core Feature)
+const StreamsView = ({ isPrivate, onClaim }: { isPrivate: boolean, onClaim: () => void }) => {
+  const [activeTab, setActiveTab] = useState<'outgoing' | 'incoming'>('incoming');
+  
+  // Mock Stream Data - In reality, fetched from contract
+  const incomingStream: Stream = {
+    id: 'stream-0x123',
+    recipient: 'You (0xAlice)',
+    token: 'USDC',
+    flowRate: 0.0034, // USDC per second
+    accrued: 450.23,
+    status: 'active',
+    startDate: '2025-10-01'
+  };
 
-const PayrollView: React.FC<PayrollViewProps> = ({ isPrivate }) => {
-  const employees = useMemo(
-    () => [
-      { id: 1, name: "Core Dev Lead", address: "0x71C...9A2", amount: 5000, token: "USDC", status: "Scheduled" },
-      { id: 2, name: "Marketing DAO", address: "0x3B2...11F", amount: 12.5, token: "ETH", status: "Processing" },
-      { id: 3, name: "Security Audit", address: "0x99A...B4C", amount: 25000, token: "USDC", status: "Sent" }
-    ],
-    []
-  );
+  const outgoingStreams: Stream[] = [
+    { id: '1', recipient: 'Dev Guild', token: 'ETH', flowRate: 0.000012, accrued: 1.2, status: 'active', startDate: '2025-11-01' },
+    { id: '2', recipient: 'Marketing', token: 'USDC', flowRate: 0.005, accrued: 850.00, status: 'active', startDate: '2025-11-15' },
+  ];
+
+  // Simulated live accruing effect
+  const [displayAccrued, setDisplayAccrued] = useState(incomingStream.accrued);
+  useEffect(() => {
+    if (isPrivate) return; // Don't animate if encrypted
+    const interval = setInterval(() => {
+      setDisplayAccrued(prev => prev + (incomingStream.flowRate * 0.5)); // fast forward for demo
+    }, 100);
+    return () => clearInterval(interval);
+  }, [isPrivate]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex justify-between items-center">
+      
+      {/* Stream Controls */}
+      <div className="flex flex-col md:flex-row justify-between items-end md:items-center gap-4 border-b border-slate-800 pb-6">
         <div>
-          <h2 className="text-2xl font-bold text-white">Encrypted Payroll</h2>
-          <p className="text-slate-400 text-sm">
-            Manage recurring payments without leaking salaries on-chain.
+          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+            <Waves className="w-6 h-6 text-blue-400" /> Payroll Streams
+          </h2>
+          <p className="text-slate-400 text-sm mt-1">
+            Real-time, encrypted salary streaming. Settle via Zcash.
           </p>
         </div>
-        <Button>
-          <Users className="w-4 h-4" /> Add Recipient
-        </Button>
+        
+        <div className="bg-slate-900 p-1 rounded-lg border border-slate-800 flex">
+          <button 
+            onClick={() => setActiveTab('incoming')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'incoming' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+          >
+            Incoming (Recipient)
+          </button>
+          <button 
+            onClick={() => setActiveTab('outgoing')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'outgoing' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+          >
+            Outgoing (Employer)
+          </button>
+        </div>
       </div>
 
-      <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-slate-950 text-slate-400 uppercase text-xs font-semibold">
-            <tr>
-              <th className="p-4">Recipient Alias</th>
-              <th className="p-4">Wallet Address (Hash)</th>
-              <th className="p-4">Amount (FHE)</th>
-              <th className="p-4">Next Payment</th>
-              <th className="p-4">Status</th>
-              <th className="p-4" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800">
-            {employees.map((emp) => (
-              <tr key={emp.id} className="hover:bg-slate-800/30 transition-colors">
-                <td className="p-4 font-medium text-white">{emp.name}</td>
-                <td className="p-4 font-mono text-slate-500 flex items-center gap-2">
-                  {emp.address} <Copy className="w-3 h-3 cursor-pointer hover:text-white" />
-                </td>
-                <td className="p-4">
-                  <div
-                    className={`inline-block px-3 py-1 rounded-md ${
-                      isPrivate ? "bg-purple-500/10 border border-purple-500/20" : ""
-                    }`}
-                  >
-                    <FHEValue value={`${emp.amount} ${emp.token}`} isPrivate={isPrivate} />
+      {activeTab === 'incoming' ? (
+        // --- INCOMING STREAM VIEW (Employee) ---
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Main Active Stream Card */}
+          <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-8 relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-32 bg-blue-500/5 blur-[100px] rounded-full pointer-events-none group-hover:bg-blue-500/10 transition-all duration-1000"></div>
+            
+            <div className="flex justify-between items-start mb-8 relative z-10">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400">
+                  <Droplets className="w-6 h-6 animate-bounce" style={{ animationDuration: '3s' }} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Active Salary Stream</h3>
+                  <div className="text-sm text-slate-500 flex items-center gap-2">
+                    From <span className="font-mono bg-slate-800 px-1.5 rounded text-slate-300">VaultGuard Treasury</span>
                   </div>
-                </td>
-                <td className="p-4 text-slate-400">Oct 1, 2025</td>
-                <td className="p-4">
-                  <span
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      emp.status === "Sent"
-                        ? "bg-green-500/10 text-green-400"
-                        : emp.status === "Processing"
-                          ? "bg-yellow-500/10 text-yellow-400"
-                          : "bg-slate-700 text-slate-300"
-                    }`}
-                  >
-                    {emp.status === "Sent" && <CheckCircle2 className="w-3 h-3" />}
-                    {emp.status}
-                  </span>
-                </td>
-                <td className="p-4 text-right">
-                  <Button variant="ghost" className="h-8 w-8 p-0">
-                    <Settings className="w-4 h-4" />
-                  </Button>
-                </td>
+                </div>
+              </div>
+              <div className="px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 text-xs font-bold uppercase tracking-wide flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                Streaming
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-8 mb-8 relative z-10">
+              <div>
+                <FHEValue 
+                  label="Unclaimed Accrual" 
+                  value={isPrivate ? incomingStream.accrued : displayAccrued.toFixed(6)} 
+                  isPrivate={isPrivate} 
+                  className="text-4xl font-mono font-bold text-white"
+                />
+                <div className="text-sm text-slate-500 mt-1">{incomingStream.token}</div>
+              </div>
+              <div>
+                <FHEValue 
+                  label="Current Flow Rate" 
+                  value={incomingStream.flowRate} 
+                  isPrivate={isPrivate}
+                  isRate={true}
+                  className="text-xl font-mono text-slate-300" 
+                />
+                <div className="text-sm text-slate-500 mt-1">per second</div>
+              </div>
+            </div>
+
+            {/* Progress Bar Visualizer */}
+            <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden mb-8">
+              <div className="h-full bg-blue-500 w-full animate-progress-indeterminate"></div>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-slate-800 pt-6">
+              <div className="text-xs text-slate-500">
+                Started: <span className="text-slate-400">{incomingStream.startDate}</span>
+              </div>
+              <Button variant="zcash" onClick={onClaim} disabled={isPrivate} className="shadow-yellow-900/20">
+                {isPrivate ? <><Lock className="w-4 h-4" /> Unlock to Claim</> : 'Claim to Shielded Pool'}
+              </Button>
+            </div>
+          </div>
+
+          {/* Context / History Side Card */}
+          <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6">
+             <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Settlement Method</h3>
+             <div className="bg-black/40 border border-slate-800 rounded-xl p-4 mb-4">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-8 h-8 rounded-full bg-yellow-500/10 flex items-center justify-center text-yellow-500 font-bold">Z</div>
+                  <div className="font-medium text-white">Zcash Shielded</div>
+                </div>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Claims are routed through the ZEC bridge. The destination address remains private and unlinked from your Ethereum identity.
+                </p>
+             </div>
+             <div className="space-y-3">
+               <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Recent Claims</div>
+               {[1,2].map(i => (
+                 <div key={i} className="flex justify-between items-center text-sm p-2 hover:bg-slate-800 rounded transition-colors cursor-pointer">
+                   <div className="flex items-center gap-2 text-slate-300">
+                     <CheckCircle2 className="w-3 h-3 text-green-500" />
+                     <span>Oct {10+i}</span>
+                   </div>
+                   <div className="font-mono text-slate-500">0.5 ZEC</div>
+                 </div>
+               ))}
+             </div>
+          </div>
+        </div>
+      ) : (
+        // --- OUTGOING STREAM VIEW (Employer) ---
+        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+          <div className="p-4 border-b border-slate-800 bg-slate-950/50 flex justify-between items-center">
+             <div className="text-sm font-medium text-slate-400">Active Payroll Streams</div>
+             <Button size="sm" variant="outline"><Users className="w-3 h-3" /> Create New Stream</Button>
+          </div>
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-950 text-slate-500 uppercase text-xs font-semibold">
+              <tr>
+                <th className="p-4">Recipient</th>
+                <th className="p-4">Token</th>
+                <th className="p-4">Flow Rate (FHE)</th>
+                <th className="p-4">Accrued (FHE)</th>
+                <th className="p-4">Status</th>
+                <th className="p-4 text-right">Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y divide-slate-800">
+              {outgoingStreams.map((stream) => (
+                <tr key={stream.id} className="hover:bg-slate-800/30 transition-colors">
+                  <td className="p-4">
+                    <div className="font-medium text-white">{stream.recipient}</div>
+                    <div className="text-xs text-slate-500 font-mono">0x...Hash</div>
+                  </td>
+                  <td className="p-4">
+                    <div className="flex items-center gap-2">
+                       <div className="w-5 h-5 rounded-full bg-slate-700 flex items-center justify-center text-[10px] text-white">
+                         {stream.token[0]}
+                       </div>
+                       {stream.token}
+                    </div>
+                  </td>
+                  <td className="p-4">
+                    <FHEValue value={stream.flowRate} isPrivate={isPrivate} isRate={true} className="font-mono text-slate-300" />
+                  </td>
+                  <td className="p-4">
+                    <FHEValue value={stream.accrued} isPrivate={isPrivate} className="font-mono text-slate-300" />
+                  </td>
+                  <td className="p-4">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-500/10 text-green-400">
+                      <Activity className="w-3 h-3" /> Active
+                    </span>
+                  </td>
+                  <td className="p-4 text-right">
+                    <button className="text-slate-400 hover:text-white transition-colors">Manage</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 };
 
-type SettingsViewProps = {
-  isPrivate: boolean;
-};
+// --- Main App Component ---
 
-const SettingsView: React.FC<SettingsViewProps> = ({ isPrivate }) => {
-  const [sliderVal, setSliderVal] = useState<number>(40);
+const App = () => {
+  const [currentView, setCurrentView] = useState<'treasury' | 'streams' | 'audit'>('treasury');
+  const [isWalletConnected, setIsWalletConnected] = useState(false);
+  const [isPrivate, setIsPrivate] = useState(true);
+  const [isZcashModalOpen, setIsZcashModalOpen] = useState(false);
+  const [decrypting, setDecrypting] = useState(false);
 
-  return (
-    <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in duration-500">
-      <div>
-        <h2 className="text-2xl font-bold text-white">Vault Logic Configuration</h2>
-        <p className="text-slate-400 text-sm">
-          These rules are encrypted using FHE. Nodes execute them blindly without knowing your strategy.
-        </p>
-      </div>
-
-      <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl space-y-8">
-        <div>
-          <div className="flex justify-between mb-4">
-            <label className="text-white font-medium">ETH Target Allocation</label>
-            <div className="text-purple-400 font-mono bg-purple-900/20 px-2 py-1 rounded">
-              {isPrivate ? <span className="blur-sm">**%</span> : `${sliderVal}%`}
-            </div>
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={sliderVal}
-            onChange={(e) => setSliderVal(parseInt(e.target.value, 10))}
-            disabled={isPrivate}
-            className={`w-full h-2 rounded-lg appearance-none cursor-pointer ${
-              isPrivate ? "bg-slate-700" : "bg-purple-600"
-            }`}
-          />
-          <div className="flex justify-between text-xs text-slate-500 mt-2">
-            <span>0% (Bearish)</span>
-            <span>100% (Max Exposure)</span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-6">
-          <div>
-            <label className="text-sm text-slate-400 mb-2 block">Rebalance Trigger Threshold</label>
-            <div
-              className={`p-3 rounded-lg border border-slate-700 bg-slate-950 flex items-center justify-between ${
-                isPrivate ? "opacity-50" : ""
-              }`}
-            >
-              <span className="text-white font-mono">{isPrivate ? "****" : "5.0"}</span>
-              <span className="text-slate-500 text-xs">% Deviation</span>
-            </div>
-          </div>
-
-          <div>
-            <label className="text-sm text-slate-400 mb-2 block">Max Slippage (PhantomSwap)</label>
-            <div className="p-3 rounded-lg border border-slate-700 bg-slate-950 flex items-center justify-between">
-              <span className="text-white font-mono">0.5</span>
-              <span className="text-slate-500 text-xs">%</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="pt-4 border-t border-slate-800">
-          <Button className="w-full justify-center" disabled={isPrivate}>
-            {isPrivate ? (
-              <>
-                <Lock className="w-4 h-4" /> Unlock to Edit Logic
-              </>
-            ) : (
-              "Update Encrypted Rules"
-            )}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const App: React.FC = () => {
-  const [currentView, setCurrentView] = useState<"dashboard" | "payroll" | "settings" | "audit">("dashboard");
-  const [isPrivate, setIsPrivate] = useState<boolean>(true);
-  const [isShieldModalOpen, setIsShieldModalOpen] = useState<boolean>(false);
-  const [decrypting, setDecrypting] = useState<boolean>(false);
-  const [manualConnected, setManualConnected] = useState<boolean>(false);
-
-  const { address, isConnected } = useAccount();
-  const { connectAsync, connectors, isPending } = useConnect();
-  const { disconnect } = useDisconnect();
-  const { switchChainAsync, chains } = useSwitchChain();
-  const { writeContractAsync } = useWriteContract();
-  const { assets: vaultAssets, isContractBacked } = useVaultGuard();
-
-  const vaultAddress = env.vaultGuardAddress;
-  const zeroAddress = "0x0000000000000000000000000000000000000000";
-
-  const [depositToken, setDepositToken] = useState<string>("");
-  const [depositAmount, setDepositAmount] = useState<string>("");
-  const [depositDecimals, setDepositDecimals] = useState<string>("6");
-  const [payrollToken, setPayrollToken] = useState<string>("");
-  const [payrollAlias, setPayrollAlias] = useState<string>("");
-  const [payrollAmount, setPayrollAmount] = useState<string>("");
-  const [payrollFrequencyDays, setPayrollFrequencyDays] = useState<string>("30");
-  const [executeAlias, setExecuteAlias] = useState<string>("");
-  const [executeAmount, setExecuteAmount] = useState<string>("");
-  const [txStatus, setTxStatus] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-
-  const walletConnected = isConnected || manualConnected;
-  const activeAddress = address ?? (manualConnected ? "0xVaultGuard...AA" : "");
-
-  const dashboardAssets = useMemo<DashboardAsset[]>(() => {
-    return vaultAssets.map((asset) => ({
-      token: asset.token,
-      symbol: asset.symbol,
-      name: asset.name,
-      encryptedBalance: asset.encryptedBalance,
-      allocation: Math.round(asset.targetWeightBps / 100)
-    }));
-  }, [vaultAssets]);
-
-  const withStatus = (message: string) => {
-    setTxStatus(message);
-    setTimeout(() => setTxStatus(null), 6000);
-  };
-
-  const handleDeposit = async () => {
-    if (!vaultAddress || !depositToken || !depositAmount) {
-      withStatus("Please provide token and amount.");
-      return;
-    }
-    if (!walletConnected || !address) {
-      withStatus("Connect a wallet first.");
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      const decimals = Number(depositDecimals) || 6;
-      const amountBigInt = parseUnits(depositAmount, decimals);
-      const ciphertext = padHex(toHex(amountBigInt), { size: 32 });
-      await writeContractAsync({
-        address: vaultAddress as `0x${string}`,
-        abi: vaultGuardAbi,
-        functionName: "deposit",
-        args: [
-          depositToken as `0x${string}`,
-          amountBigInt,
-          { data: ciphertext, securityZone: 0 }
-        ]
-      });
-      withStatus("Deposit submitted.");
-    } catch (error) {
-      withStatus(`Deposit failed: ${(error as Error).message}`);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleSchedulePayroll = async () => {
-    if (!vaultAddress || !payrollToken || !payrollAlias || !payrollAmount) {
-      withStatus("Provide alias, amount, and token.");
-      return;
-    }
-    if (!walletConnected || !address) {
-      withStatus("Connect a wallet first.");
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      const encryptedRecipient = keccak256(stringToBytes(payrollAlias));
-      const encryptedAmount = keccak256(stringToBytes(`${payrollAlias}:${payrollAmount}`));
-      const amountHint = parseUnits(payrollAmount, 6);
-      const frequencySeconds =
-        BigInt(Number(payrollFrequencyDays || "30")) * 24n * 60n * 60n;
-
-      await writeContractAsync({
-        address: vaultAddress as `0x${string}`,
-        abi: vaultGuardAbi,
-        functionName: "schedulePayroll",
-        args: [
-          encryptedRecipient,
-          encryptedAmount,
-          zeroAddress,
-          amountHint,
-          payrollToken as `0x${string}`,
-          frequencySeconds
-        ]
-      });
-      withStatus("Payroll entry scheduled.");
-    } catch (error) {
-      withStatus(`Schedule failed: ${(error as Error).message}`);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleExecutePayroll = async () => {
-    if (!vaultAddress || !address || !executeAlias || !executeAmount) {
-      withStatus("Provide alias and amount for execution.");
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      const transfers = [
-        {
-          vault: address as `0x${string}`,
-          recipientDiversifier: keccak256(stringToBytes(`${executeAlias}-div`)),
-          recipientPk: keccak256(stringToBytes(`${executeAlias}-pk`)),
-          metadata: stringToHex(`payroll:${executeAlias}`),
-          encryptedAmount: keccak256(stringToBytes(`${executeAlias}:${executeAmount}`))
-        }
-      ];
-
-      await writeContractAsync({
-        address: vaultAddress as `0x${string}`,
-        abi: vaultGuardAbi,
-        functionName: "executePayroll",
-        args: [address as `0x${string}`, transfers]
-      });
-      withStatus("Payroll execution sent.");
-    } catch (error) {
-      withStatus(`Execute failed: ${(error as Error).message}`);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const ensureFhenixNetwork = async () => {
-    const alreadyOnChain = chains.some((chain) => chain.id === fhenixHelium.id);
-    if (!alreadyOnChain) return;
-
-    try {
-      await switchChainAsync({ chainId: fhenixHelium.id });
-    } catch {
-      // ignore for mock/demo usage
-    }
-  };
-
-  const handleWalletClick = async () => {
-    if (isConnected) {
-      disconnect();
-      setManualConnected(false);
-      return;
-    }
-
-    if (connectors.length === 0) {
-      setManualConnected((prev) => !prev);
-      return;
-    }
-
-    try {
-      const connector = connectors[0];
-      await connectAsync({ connector, chainId: fhenixHelium.id });
-      await ensureFhenixNetwork();
-      setManualConnected(false);
-    } catch {
-      setManualConnected(true);
-    }
-  };
-
+  // Toggle Privacy Simulation
   const togglePrivacy = () => {
-    if (!walletConnected || decrypting) {
-      return;
-    }
-
     if (isPrivate) {
       setDecrypting(true);
       setTimeout(() => {
@@ -620,6 +418,8 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 font-sans selection:bg-purple-500/30">
+      
+      {/* Sidebar */}
       <aside className="fixed left-0 top-0 h-full w-64 bg-slate-900 border-r border-slate-800 flex flex-col z-20">
         <div className="p-6 flex items-center gap-3 border-b border-slate-800">
           <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center shadow-lg shadow-purple-900/50">
@@ -627,201 +427,113 @@ const App: React.FC = () => {
           </div>
           <span className="font-bold text-xl text-white tracking-tight">VaultGuard</span>
         </div>
+
         <nav className="flex-1 p-4 space-y-2">
-          {[
-            { id: "dashboard", label: "Portfolio", icon: Activity },
-            { id: "payroll", label: "Payroll Engine", icon: Users },
-            { id: "settings", label: "Vault Logic", icon: Settings },
-            { id: "audit", label: "Compliance", icon: FileText }
-          ].map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setCurrentView(item.id as typeof currentView)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-                currentView === item.id
-                  ? "bg-purple-600/10 text-purple-400 border border-purple-600/20"
-                  : "text-slate-400 hover:text-white hover:bg-slate-800"
-              }`}
-            >
-              <item.icon className="w-4 h-4" />
-              <span className="font-medium">{item.label}</span>
-            </button>
-          ))}
+          <button
+            onClick={() => setCurrentView('treasury')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+              currentView === 'treasury' 
+                ? 'bg-purple-600/10 text-purple-400 border border-purple-600/20' 
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <Wallet className="w-4 h-4" />
+            <span className="font-medium">Treasury</span>
+          </button>
+          
+          <button
+            onClick={() => setCurrentView('streams')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+              currentView === 'streams' 
+                ? 'bg-purple-600/10 text-purple-400 border border-purple-600/20' 
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <Waves className="w-4 h-4" />
+            <span className="font-medium">Streams & Drips</span>
+          </button>
+
+          <button
+            onClick={() => setCurrentView('audit')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+              currentView === 'audit' 
+                ? 'bg-purple-600/10 text-purple-400 border border-purple-600/20' 
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+            <span className="font-medium">Compliance</span>
+          </button>
         </nav>
+
         <div className="p-4 border-t border-slate-800">
-          <div className="bg-slate-950 rounded-lg p-4 border border-slate-800">
-            <div className="flex items-center gap-2 text-xs text-slate-500 mb-2">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              Fhenix Helium Testnet
+          <div className="bg-slate-950 rounded-lg p-3 border border-slate-800">
+            <div className="flex items-center gap-2 text-[10px] text-slate-500 uppercase tracking-wider mb-2">
+              <Zap className="w-3 h-3 text-yellow-500" />
+              VaultGuard Intent Layer
             </div>
-            <div className="text-xs text-slate-600 font-mono">Build v0.1.0-alpha</div>
+            <p className="text-xs text-slate-400">
+              Automated stream settlement enabled via NEAR Intents.
+            </p>
           </div>
         </div>
       </aside>
 
-      <main className="ml-64 min-h-screen flex flex-col">
+      {/* Main Content */}
+      <main className="ml-64 min-h-screen flex flex-col relative">
+        
+        {/* Header */}
         <header className="h-16 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-0 z-10 flex items-center justify-between px-8">
           <h1 className="text-lg font-semibold text-white capitalize">
-            {currentView === "dashboard" ? "Overview" : currentView.replace("-", " ")}
+            {currentView === 'streams' ? 'Streaming Engine' : currentView}
           </h1>
-
+          
           <div className="flex items-center gap-4">
-            {walletConnected && (
-              <button
+            {isWalletConnected && (
+              <button 
                 onClick={togglePrivacy}
                 disabled={decrypting}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${
-                  isPrivate
-                    ? "bg-purple-900/20 border-purple-500/30 text-purple-400"
-                    : "bg-slate-800 border-slate-700 text-slate-300"
+                  isPrivate 
+                    ? 'bg-purple-900/20 border-purple-500/30 text-purple-400' 
+                    : 'bg-slate-800 border-slate-700 text-slate-300'
                 }`}
               >
-                {decrypting ? (
-                  <span className="animate-spin mr-1">⏳</span>
-                ) : isPrivate ? (
-                  <EyeOff className="w-4 h-4" />
-                ) : (
-                  <Eye className="w-4 h-4" />
-                )}
+                {decrypting ? <span className="animate-spin">⏳</span> : isPrivate ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 <span className="text-xs font-medium">
-                  {decrypting ? "Decrypting..." : isPrivate ? "View: Encrypted" : "View: Decrypted"}
+                  {decrypting ? 'Decrypting...' : isPrivate ? 'View: Encrypted' : 'View: Decrypted'}
                 </span>
               </button>
             )}
 
-            <Button
-              variant={walletConnected ? "secondary" : "primary"}
-              onClick={handleWalletClick}
-              disabled={isPending}
+            <Button 
+              variant={isWalletConnected ? "secondary" : "primary"}
+              onClick={() => setIsWalletConnected(!isWalletConnected)}
             >
               <Wallet className="w-4 h-4" />
-              {walletConnected
-                ? activeAddress || "Connected"
-                : isPending
-                  ? "Connecting..."
-                  : "Connect Wallet"}
+              {isWalletConnected ? '0xAlice...B7A' : 'Connect Wallet'}
             </Button>
           </div>
         </header>
 
-        <div className="p-8 flex-1 overflow-auto">
-          {!walletConnected ? (
+        {/* Dynamic View */}
+        <div className="p-8 flex-1">
+          {!isWalletConnected ? (
             <div className="flex flex-col items-center justify-center h-[60vh] text-center space-y-4">
-              <div className="w-16 h-16 bg-slate-800 rounded-2xl flex items-center justify-center mb-4">
+              <div className="w-16 h-16 bg-slate-800 rounded-2xl flex items-center justify-center mb-4 ring-1 ring-slate-700">
                 <Lock className="w-8 h-8 text-slate-500" />
               </div>
-              <h2 className="text-2xl font-bold text-white">Vault Access Required</h2>
+              <h2 className="text-2xl font-bold text-white">Encrypted Vault Access</h2>
               <p className="text-slate-400 max-w-md">
-                Connect your FHE-enabled wallet to decrypt your portfolio thresholds and payroll schedule.
+                Connect your FHE-enabled wallet to decrypt stream flow rates and treasury balances.
               </p>
-              <Button onClick={handleWalletClick} disabled={isPending}>
-                <Wallet className="w-4 h-4" />
-                {isPending ? "Connecting..." : "Connect Wallet"}
-              </Button>
+              <Button onClick={() => setIsWalletConnected(true)}>Connect Wallet</Button>
             </div>
           ) : (
             <>
-              {vaultAddress && (
-                <div className="mb-8 grid gap-6 lg:grid-cols-3">
-                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
-                    <h3 className="text-white font-semibold">Deposit (Mock)</h3>
-                    <input
-                      className="w-full rounded-md bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white"
-                      placeholder="Token address"
-                      value={depositToken}
-                      onChange={(e) => setDepositToken(e.target.value)}
-                    />
-                    <div className="flex gap-3">
-                      <input
-                        className="w-full rounded-md bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white"
-                        placeholder="Amount"
-                        value={depositAmount}
-                        onChange={(e) => setDepositAmount(e.target.value)}
-                      />
-                      <input
-                        className="w-20 rounded-md bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white"
-                        placeholder="Dec"
-                        value={depositDecimals}
-                        onChange={(e) => setDepositDecimals(e.target.value)}
-                      />
-                    </div>
-                    <Button onClick={handleDeposit} disabled={isSubmitting}>
-                      Submit Deposit
-                    </Button>
-                  </div>
-
-                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
-                    <h3 className="text-white font-semibold">Schedule Payroll (Mock)</h3>
-                    <input
-                      className="w-full rounded-md bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white"
-                      placeholder="Recipient alias"
-                      value={payrollAlias}
-                      onChange={(e) => setPayrollAlias(e.target.value)}
-                    />
-                    <input
-                      className="w-full rounded-md bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white"
-                      placeholder="Amount (e.g. 50000)"
-                      value={payrollAmount}
-                      onChange={(e) => setPayrollAmount(e.target.value)}
-                    />
-                    <input
-                      className="w-full rounded-md bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white"
-                      placeholder="Payroll token address"
-                      value={payrollToken}
-                      onChange={(e) => setPayrollToken(e.target.value)}
-                    />
-                    <input
-                      className="w-full rounded-md bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white"
-                      placeholder="Frequency (days)"
-                      value={payrollFrequencyDays}
-                      onChange={(e) => setPayrollFrequencyDays(e.target.value)}
-                    />
-                    <Button onClick={handleSchedulePayroll} disabled={isSubmitting}>
-                      Schedule Encrypted Payroll
-                    </Button>
-                  </div>
-
-                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
-                    <h3 className="text-white font-semibold">Execute Payroll (Mock)</h3>
-                    <input
-                      className="w-full rounded-md bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white"
-                      placeholder="Recipient alias"
-                      value={executeAlias}
-                      onChange={(e) => setExecuteAlias(e.target.value)}
-                    />
-                    <input
-                      className="w-full rounded-md bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white"
-                      placeholder="Amount (e.g. 50000)"
-                      value={executeAmount}
-                      onChange={(e) => setExecuteAmount(e.target.value)}
-                    />
-                    <Button onClick={handleExecutePayroll} disabled={isSubmitting}>
-                      Execute Shielded Payroll
-                    </Button>
-                    <p className="text-xs text-slate-500">
-                      Transfers are mocked with hashed metadata for demo purposes.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {txStatus && (
-                <div className="mb-6 rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-200">
-                  {txStatus}
-                </div>
-              )}
-
-              {currentView === "dashboard" && (
-                <DashboardView
-                  isPrivate={isPrivate}
-                  assets={dashboardAssets}
-                  isContractBacked={isContractBacked}
-                  onShieldAssets={() => setIsShieldModalOpen(true)}
-                />
-              )}
-              {currentView === "payroll" && <PayrollView isPrivate={isPrivate} />}
-              {currentView === "settings" && <SettingsView isPrivate={isPrivate} />}
-              {currentView === "audit" && (
+              {currentView === 'treasury' && <TreasuryView isPrivate={isPrivate} />}
+              {currentView === 'streams' && <StreamsView isPrivate={isPrivate} onClaim={() => setIsZcashModalOpen(true)} />}
+              {currentView === 'audit' && (
                 <div className="text-center py-20 text-slate-500">
                   <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
                   <h3 className="text-lg font-medium text-white">Compliance Logs</h3>
@@ -833,43 +545,65 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      {isShieldModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md p-6 shadow-2xl">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold text-white">Shield Assets</h3>
-              <button
-                onClick={() => setIsShieldModalOpen(false)}
-                className="text-slate-400 hover:text-white text-2xl"
-              >
-                ×
-              </button>
+      {/* Zcash Settlement Modal */}
+      {isZcashModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md p-0 shadow-2xl overflow-hidden">
+            <div className="bg-slate-950 p-6 border-b border-slate-800">
+               <div className="flex justify-between items-start">
+                  <h3 className="text-xl font-bold text-white">Settlement via Zcash</h3>
+                  <button onClick={() => setIsZcashModalOpen(false)} className="text-slate-400 hover:text-white">&times;</button>
+               </div>
+               <p className="text-xs text-slate-400 mt-2">
+                 Your claim will be routed through the ZEC Privacy Bridge. 
+               </p>
             </div>
+            
+            <div className="p-6 space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="text-center">
+                  <div className="text-xs text-slate-500 mb-1">Stream Source</div>
+                  <div className="font-bold text-white text-lg">USDC</div>
+                  <div className="text-[10px] bg-purple-900/30 text-purple-400 px-1 rounded">FHE Vault</div>
+                </div>
+                
+                <div className="flex flex-col items-center">
+                   <div className="h-0.5 w-16 bg-slate-700 relative">
+                     <div className="absolute inset-0 bg-blue-500 animate-progress-indeterminate"></div>
+                   </div>
+                   <ArrowRight className="w-4 h-4 text-slate-500 mt-1" />
+                </div>
 
-            <div className="flex items-center justify-between bg-slate-950 p-4 rounded-xl border border-slate-800 mb-6">
-              <div className="text-center">
-                <div className="text-xs text-slate-500 mb-1">Public (ERC20)</div>
-                <div className="font-bold text-white">USDC</div>
+                <div className="text-center">
+                  <div className="text-xs text-slate-500 mb-1">Destination</div>
+                  <div className="font-bold text-yellow-500 text-lg">zUSDC</div>
+                  <div className="text-[10px] bg-yellow-900/20 text-yellow-500 px-1 rounded">Shielded Pool</div>
+                </div>
               </div>
-              <ArrowRightLeft className="text-slate-600 animate-pulse" />
-              <div className="text-center">
-                <div className="text-xs text-yellow-500/80 mb-1">Shielded (ZEC)</div>
-                <div className="font-bold text-yellow-500">zUSDC</div>
+
+              <div className="bg-slate-950 rounded-lg p-4 border border-slate-800 text-sm space-y-2">
+                 <div className="flex justify-between">
+                   <span className="text-slate-500">Claim Amount</span>
+                   <span className="text-white font-mono">450.23 USDC</span>
+                 </div>
+                 <div className="flex justify-between">
+                   <span className="text-slate-500">Bridge Fee</span>
+                   <span className="text-white font-mono">0.05 USDC</span>
+                 </div>
+                 <div className="border-t border-slate-800 pt-2 flex justify-between font-bold">
+                   <span className="text-white">Total Shielded</span>
+                   <span className="text-yellow-500">450.18 zUSDC</span>
+                 </div>
               </div>
+
+              <Button className="w-full justify-center" variant="zcash">
+                 Confirm Settlement
+              </Button>
             </div>
-            <p className="text-sm text-slate-400 mb-6">
-              This will route your assets through the Zcash bridge. The destination amount will only be visible to the
-              holder of the viewing key.
-            </p>
-            <Button className="w-full justify-center" onClick={() => setIsShieldModalOpen(false)}>
-              Confirm Shield Transaction
-            </Button>
           </div>
         </div>
       )}
     </div>
   );
 };
-
 export default App;
-

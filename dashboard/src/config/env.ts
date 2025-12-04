@@ -7,4 +7,3 @@ export const env = {
   vgTokenAddress: (import.meta.env.VITE_VG_TOKEN_ADDRESS ?? "").toLowerCase(),
   mockFhe: import.meta.env.VITE_MOCK_FHE ?? "0"
 };
-

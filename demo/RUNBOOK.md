@@ -5,16 +5,16 @@ This guide walks through the 8-hour hackathon demo sequence for VaultGuard: encr
 ## 1. Environment Prep
 
 ```bash
-cp config/env.example .env             # fill with deployed addresses
-forge install                          # resolves dependencies
-npm install --prefix dashboard         # installs dashboard deps
+cp config/env.example .env               # populate Sepolia RPC + contract addresses
+forge install                            # resolves dependencies
+npm install --prefix dashboard           # installs dashboard deps
 ```
 
 ## 2. Contract Simulation
 
 1. Launch local anvil fork (optional):
    ```bash
-   anvil --fork-url $FHENIX_RPC_URL
+   anvil --fork-url $SEPOLIA_RPC_URL
    ```
 2. Run targeted Foundry scenarios:
    ```bash
@@ -23,12 +23,14 @@ npm install --prefix dashboard         # installs dashboard deps
    ```
    - Confirms encrypted thresholds trigger PhantomSwap orders.
    - Verifies payroll payouts deduct from vault and log encrypted audit entries.
-3. Deploy trio (threshold, payroll, vault) using script:
+3. Deploy the Sepolia stack (VG token + payroll + vault + mock ZEC bridge):
    ```bash
-   forge script scripts/VaultGuard.s.sol \
-     --rpc-url $FHENIX_RPC_URL \
-     --broadcast
+   forge script scripts/VaultGuard.s.sol:VaultGuardDeploy \
+     --rpc-url $SEPOLIA_RPC_URL \
+     --broadcast \
+     --private-key $PRIVATE_KEY
    ```
+   The script mints **1,000,000 VG (6 decimals)** to the deployer—use that balance for deposits and streams.
 
 ## 3. Dashboard Walkthrough
 
@@ -43,7 +45,7 @@ npm install --prefix dashboard         # installs dashboard deps
    - **Payroll Engine**: reveal blurred salary blobs, status chips.
    - **Vault Logic**: lock slider while encrypted, unlock to edit.
    - **Compliance Tab**: show empty encrypted audit trail placeholder.
-3. Highlight wallet banner (Helium Testnet indicator) and simulated address (0xVaultGuard…).
+3. Highlight wallet banner (Sepolia indicator) and simulated address (0xVaultGuard…).
 
 ## 4. Demo Automation Helper
 

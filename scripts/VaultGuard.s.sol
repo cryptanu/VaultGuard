@@ -5,23 +5,31 @@ import "forge-std/Script.sol";
 
 import "../contracts/VaultGuard.sol";
 import "../contracts/PayrollEngine.sol";
-import "../contracts/mocks/MockZecBridge.sol";
+import "../contracts/bridge/ZecBridgeClient.sol";
+import "../contracts/mocks/MockERC20.sol";
 
 contract VaultGuardDeploy is Script {
     function run() external {
-        uint256 deployerKey = vm.envUint("PRIVATE_KEY");
+        uint256 deployerKey;
+        try vm.envUint("PRIVATE_KEY") returns (uint256 key) {
+            deployerKey = key;
+        } catch {
+            deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+        }
         address deployer = vm.addr(deployerKey);
 
         vm.startBroadcast(deployerKey);
+        MockERC20 token = new MockERC20("VaultGuard Token", "VG", 6);
         PayrollEngine payroll = new PayrollEngine();
-        MockZecBridge zecBridge = new MockZecBridge();
+        ZecBridgeClient zecBridge = new ZecBridgeClient(deployer);
         VaultGuard vault = new VaultGuard(payroll, zecBridge);
-        payroll.configureVault(address(vault));
+        token.mint(deployer, 1_000_000e6);
         vm.stopBroadcast();
 
         console2.log("Deployer", deployer);
+        console2.log("Token", address(token));
         console2.log("PayrollEngine", address(payroll));
-        console2.log("MockZecBridge", address(zecBridge));
+        console2.log("ZecBridgeClient", address(zecBridge));
         console2.log("VaultGuard", address(vault));
     }
 }

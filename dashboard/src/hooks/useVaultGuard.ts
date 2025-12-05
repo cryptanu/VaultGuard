@@ -5,7 +5,7 @@ import { env } from "../config/env";
 import { vaultGuardAbi } from "../abis/vaultGuard";
 import { zecBridgeAbi } from "../abis/zecBridge";
 
-const tokenMetadata: Record<
+const staticTokenMetadata: Record<
   string,
   { symbol: string; name: string; decimals: number; priceUsd: number }
 > = {
@@ -50,28 +50,43 @@ type VaultStream = {
   active: boolean;
 };
 
-const fallbackAssets: VaultAsset[] = [
-  {
-    token: "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-    encryptedBalance: ("0x" + "0".repeat(64)) as `0x${string}`,
-    ...tokenMetadata["0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"]
-  },
-  {
-    token: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-    encryptedBalance: ("0x" + "0".repeat(64)) as `0x${string}`,
-    ...tokenMetadata["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"]
-  },
-  {
-    token: "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599",
-    encryptedBalance: ("0x" + "0".repeat(64)) as `0x${string}`,
-    ...tokenMetadata["0x2260fac5e5542a773aa44fbcfedf7c193bc2c599"]
-  }
-];
+type BridgeTransfer = {
+  index: number;
+  vault: `0x${string}`;
+  commitment: `0x${string}`;
+  timestamp: bigint;
+  processed: boolean;
+  zcashTxId: `0x${string}`;
+  recipientDiversifier: `0x${string}`;
+  recipientPk: `0x${string}`;
+  encryptedAmount: `0x${string}`;
+  metadata: `0x${string}`;
+};
 
 export const useVaultGuard = () => {
   const { address } = useAccount();
   const contractAddress = env.vaultGuardAddress;
   const enabled = Boolean(contractAddress && contractAddress.startsWith("0x") && address);
+
+  const resolveMetadata = (token: string) => {
+    const lowered = token.toLowerCase();
+    if (env.vgTokenAddress && lowered === env.vgTokenAddress) {
+      return {
+        symbol: "VG",
+        name: "VaultGuard Token",
+        decimals: 6,
+        priceUsd: 1
+      };
+    }
+    return (
+      staticTokenMetadata[lowered] ?? {
+        symbol: "ASSET",
+        name: "Unknown Asset",
+        decimals: 18,
+        priceUsd: 1
+      }
+    );
+  };
 
   const {
     data: assetsData,
@@ -107,23 +122,19 @@ export const useVaultGuard = () => {
 
   const assets = useMemo<VaultAsset[]>(() => {
     if (!enabled || !assetsData) {
-      return fallbackAssets;
+      return [];
     }
 
-    return (assetsData as { token: string; encryptedBalance: `0x${string}` }[]).map((asset) => {
-      const metadata = tokenMetadata[asset.token.toLowerCase()] ?? {
-        symbol: "ASSET",
-        name: "Unknown Asset",
-        decimals: 18,
-        priceUsd: 1
-      };
-      return {
-        token: asset.token,
-        encryptedBalance: asset.encryptedBalance,
-        ...metadata,
-        targetWeightBps: 0
-      };
-    });
+    return (assetsData as { token: string; encryptedBalance: `0x${string}` }[])
+      .filter((asset) => asset.token !== "0x0000000000000000000000000000000000000000")
+      .map((asset) => {
+        const metadata = resolveMetadata(asset.token);
+        return {
+          token: asset.token,
+          encryptedBalance: asset.encryptedBalance,
+          ...metadata
+        };
+      });
   }, [assetsData, enabled]);
 
   const assetMetadataMap = useMemo<Record<string, VaultAsset>>(() => {
@@ -162,6 +173,15 @@ export const useVaultGuard = () => {
     address: (zecBridgeAddress ?? undefined) as `0x${string}` | undefined,
     abi: zecBridgeAbi,
     functionName: "getCommitments",
+    query: {
+      enabled: Boolean(zecBridgeAddress)
+    }
+  });
+
+  const { data: queueLengthData } = useReadContract({
+    address: (zecBridgeAddress ?? undefined) as `0x${string}` | undefined,
+    abi: zecBridgeAbi,
+    functionName: "queueLength",
     query: {
       enabled: Boolean(zecBridgeAddress)
     }
@@ -217,12 +237,81 @@ export const useVaultGuard = () => {
     return commitmentsData as `0x${string}`[];
   }, [commitmentsData]);
 
+  const queueLength = Number(queueLengthData ?? 0n);
+
+  const bridgeContracts = useMemo(() => {
+    if (!zecBridgeAddress || queueLength === 0) {
+      return [];
+    }
+
+    return Array.from({ length: queueLength }, (_, index) => ({
+      address: zecBridgeAddress as `0x${string}`,
+      abi: zecBridgeAbi,
+      functionName: "getQueuedTransfer" as const,
+      args: [BigInt(index)]
+    }));
+  }, [queueLength, zecBridgeAddress]);
+
+  const {
+    data: bridgeMetadata,
+    isLoading: bridgeLoading
+  } = useReadContracts({
+    contracts: bridgeContracts,
+    query: {
+      enabled: bridgeContracts.length > 0
+    }
+  });
+
+  const bridgeTransfers = useMemo<BridgeTransfer[]>(() => {
+    if (!bridgeMetadata || bridgeMetadata.length === 0) {
+      return [];
+    }
+
+    return bridgeMetadata
+      .map((entry, index) => {
+        if (!entry || entry.status !== "success" || !entry.result) {
+          return null;
+        }
+
+        const result = entry.result as readonly [
+          {
+            vault: `0x${string}`;
+            recipientDiversifier: `0x${string}`;
+            recipientPk: `0x${string}`;
+            metadata: `0x${string}`;
+            encryptedAmount: `0x${string}`;
+          },
+          bigint,
+          boolean,
+          `0x${string}`,
+          `0x${string}`
+        ];
+
+        const [transfer, timestamp, processed, commitment, zcashTxId] = result;
+
+        return {
+          index,
+          vault: transfer.vault,
+          commitment,
+          timestamp: BigInt(timestamp ?? 0),
+          processed: Boolean(processed),
+          zcashTxId,
+          recipientDiversifier: transfer.recipientDiversifier,
+          recipientPk: transfer.recipientPk,
+          encryptedAmount: transfer.encryptedAmount,
+          metadata: transfer.metadata
+        };
+      })
+      .filter(Boolean) as BridgeTransfer[];
+  }, [bridgeMetadata]);
+
   return {
     assets,
     assetMetadataMap,
     streams,
     commitments,
-    isLoading: assetsLoading || streamsLoading || commitmentsLoading,
+    bridgeTransfers,
+    isLoading: assetsLoading || streamsLoading || commitmentsLoading || bridgeLoading,
     isContractBacked: enabled && Boolean(assetsData)
   };
 };

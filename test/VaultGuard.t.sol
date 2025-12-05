@@ -6,7 +6,7 @@ import "forge-std/Test.sol";
 import "../contracts/VaultGuard.sol";
 import "../contracts/PayrollEngine.sol";
 import "../contracts/mocks/MockERC20.sol";
-import "../contracts/mocks/MockZecBridge.sol";
+import "../contracts/bridge/ZecBridgeClient.sol";
 import "./utils/FheTest.sol";
 import "./utils/PermissionHelper.sol";
 import {Permission} from "@fhenixprotocol/contracts/access/Permissioned.sol";
@@ -19,7 +19,7 @@ contract VaultGuardTest is Test, FheTest {
     MockERC20 private ethToken;
     MockERC20 private usdcToken;
     MockERC20 private wbtcToken;
-    MockZecBridge private zecBridge;
+    ZecBridgeClient private zecBridge;
 
     PermissionHelper private permissionHelper;
 
@@ -36,7 +36,7 @@ contract VaultGuardTest is Test, FheTest {
         signer = vm.addr(0xB0B);
 
         payrollEngine = new PayrollEngine();
-        zecBridge = new MockZecBridge();
+        zecBridge = new ZecBridgeClient(address(this));
         vault = new VaultGuard(payrollEngine, zecBridge);
         permissionHelper = new PermissionHelper(address(vault));
 
@@ -140,10 +140,57 @@ contract VaultGuardTest is Test, FheTest {
         assertEq(usdcToken.balanceOf(address(zecBridge)), firstClaim + secondClaim);
     }
 
+    function testBridgeQueueLifecycle() public {
+        vm.startPrank(owner);
+        vault.deposit(address(usdcToken), 10_000 ether, encrypt128(10_000 ether));
+
+        uint64 streamDuration = 1 days;
+        uint256 salary = 1_000 ether;
+        uint256 ratePerSecond = salary / streamDuration;
+        uint256 streamId = vault.schedulePayroll(
+            keccak256("bridge-employee"),
+            encrypt128(ratePerSecond),
+            payable(address(0)),
+            ratePerSecond,
+            address(usdcToken),
+            streamDuration
+        );
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + streamDuration);
+        uint256 claimAmount = ratePerSecond * streamDuration;
+        ZecTypes.ShieldedTransfer memory transfer = ZecTypes.ShieldedTransfer({
+            vault: owner,
+            recipientDiversifier: keccak256("bridge-diversifier"),
+            recipientPk: keccak256("bridge-pk"),
+            metadata: abi.encodePacked("salary:", streamId),
+            encryptedAmount: keccak256("bridge-amount")
+        });
+
+        vm.prank(owner);
+        vault.claimPayrollStream(owner, streamId, claimAmount, encrypt128(claimAmount), transfer);
+
+        (, , bool processed, bytes32 commitment, bytes32 txId) = zecBridge.getQueuedTransfer(0);
+        assertFalse(processed);
+        assertEq(commitment, zecBridge.getCommitments()[0]);
+        assertEq(txId, bytes32(0));
+
+        bytes32 zcashTxId = keccak256("zcash-tx");
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", owner));
+        zecBridge.markTransferProcessed(0, zcashTxId);
+
+        vm.prank(address(this));
+        zecBridge.markTransferProcessed(0, zcashTxId);
+        (, , bool processedAfter, , bytes32 recordedTxId) = zecBridge.getQueuedTransfer(0);
+        assertTrue(processedAfter);
+        assertEq(recordedTxId, zcashTxId);
+    }
+
     function _seedOwnerBalances() private {
-        ethToken.mint(owner, 1_000 ether);
-        usdcToken.mint(owner, 1_000 ether);
-        wbtcToken.mint(owner, 1_000 ether);
+        ethToken.mint(owner, 1_000_000 ether);
+        usdcToken.mint(owner, 1_000_000 ether);
+        wbtcToken.mint(owner, 1_000_000 ether);
     }
 
     function _initializeVault() private {

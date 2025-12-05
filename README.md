@@ -63,8 +63,13 @@ npm install
 npm install --prefix dashboard
 
 # 2. Configure env variables (Sepolia defaults)
-cp config/env.example config/env
-cp dashboard/.env.example dashboard/.env.local  # if present
+cp config/env.example .env
+
+# Required entries
+#   - SEPOLIA_RPC_URL / SEPOLIA_CHAIN_ID / PRIVATE_KEY (Foundry scripts)
+#   - VITE_SEPOLIA_RPC_URL / VITE_SEPOLIA_CHAIN_ID / VITE_VAULT_GUARD_ADDRESS
+#   - VITE_VG_TOKEN_ADDRESS / VITE_ZCASH_BRIDGE_ADDRESS / VITE_WALLETCONNECT_PROJECT_ID
+#   - VITE_MOCK_FHE=0 (set to 1 for local mock mode)
 
 # 3. Run the Foundry tests
 forge test
@@ -72,8 +77,6 @@ forge test
 # 4. Launch the dashboard (Sepolia)
 npm run dev --prefix dashboard
 ```
-
-Set `VITE_SEPOLIA_RPC_URL`, `VITE_VAULT_GUARD_ADDRESS`, `VITE_ZCASH_BRIDGE_ADDRESS`, and optionally `VITE_VG_TOKEN_ADDRESS`. Toggle `VITE_MOCK_FHE=1` if you want to run in mock mode without the FHE precompile.
 
 ---
 
@@ -83,9 +86,23 @@ Set `VITE_SEPOLIA_RPC_URL`, `VITE_VAULT_GUARD_ADDRESS`, `VITE_ZCASH_BRIDGE_ADDRE
 |---------|--------|-------|
 | Encrypted vault balances | ✅ | Stored as `euint128` via Fhenix library. |
 | Payroll drip scheduling | ✅ | `PayrollEngine.sol` accrues and enforces rate hints. |
-| Shielded settlement bridge | ✅ (mock) | Emits commitments; replace mock adapter when live endpoints exist. |
+| Shielded settlement bridge | ✅ | `ZecBridgeClient` queues commitments and exposes relayer processing hooks. |
 | Auditor proof trail | ✅ | Commitment log available for viewing-key holders. |
 | Automated rebalancing | 🚧 Planned | Requires private DEX integrations (e.g., PhantomSwap). |
+
+---
+
+## Sepolia Deployment Cheatsheet
+
+```bash
+# Deploy VaultGuard stack (MockERC20 + PayrollEngine + ZecBridgeClient + VaultGuard)
+forge script scripts/VaultGuard.s.sol:VaultGuardDeploy \
+  --rpc-url $SEPOLIA_RPC_URL \
+  --broadcast \
+  --private-key $PRIVATE_KEY
+```
+
+The script deploys a fresh ERC-20 (6 decimals) and mints **1,000,000 VG tokens** to the deployer so the vault owner can immediately fund deposits and payroll streams. After the run, copy the printed contract addresses into your `.env` / Vercel project settings.
 
 ---
 

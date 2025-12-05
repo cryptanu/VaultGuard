@@ -6,7 +6,7 @@ import "forge-std/Test.sol";
 import "../contracts/VaultGuard.sol";
 import "../contracts/PayrollEngine.sol";
 import "../contracts/mocks/MockERC20.sol";
-import "../contracts/mocks/MockZecBridge.sol";
+import "../contracts/bridge/ZecBridgeClient.sol";
 import "../contracts/interfaces/IZecBridge.sol";
 import "./utils/FheTest.sol";
 import "./utils/PermissionHelper.sol";
@@ -16,7 +16,7 @@ import {ZecTypes} from "../contracts/interfaces/IZecBridge.sol";
 contract VaultGuardE2ETest is Test, FheTest {
     VaultGuard private vault;
     PayrollEngine private payrollEngine;
-    MockZecBridge private zecBridge;
+    ZecBridgeClient private zecBridge;
 
     MockERC20 private usdcToken;
 
@@ -33,7 +33,7 @@ contract VaultGuardE2ETest is Test, FheTest {
         owner = vm.addr(ownerPrivateKey);
 
         payrollEngine = new PayrollEngine();
-        zecBridge = new MockZecBridge();
+        zecBridge = new ZecBridgeClient(address(this));
 
         vault = new VaultGuard(payrollEngine, zecBridge);
         permissionHelper = new PermissionHelper(address(vault));

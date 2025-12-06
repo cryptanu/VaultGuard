@@ -24,7 +24,7 @@ import {
   useSwitchChain,
   useWriteContract
 } from "wagmi";
-import { erc20Abi, parseUnits } from "viem";
+import { erc20Abi, isAddress, parseUnits } from "viem";
 
 import { vaultGuardAbi } from "./abis/vaultGuard";
 import { env } from "./config/env";
@@ -260,9 +260,16 @@ const App = () => {
     return parseUnits(trimmed, decimals);
   };
 
+  const ensureValidAddress = (value: string, label: string) => {
+    if (!value || !isAddress(value, { strict: false })) {
+      setStatus({ state: "error", message: `${label} must be a valid 20-byte hex address.` });
+      return false;
+    }
+    return true;
+  };
+
   const handleApprove = async () => {
-    if (!depositToken) {
-      setStatus({ state: "error", message: "Provide a token address." });
+    if (!ensureValidAddress(depositToken, "Token address")) {
       return;
     }
     try {
@@ -283,8 +290,7 @@ const App = () => {
 
   const handleDeposit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!depositToken) {
-      setStatus({ state: "error", message: "Provide a token address." });
+    if (!ensureValidAddress(depositToken, "Token address")) {
       return;
     }
     try {
@@ -306,8 +312,7 @@ const App = () => {
 
   const handleScheduleStream = async (event: FormEvent) => {
     event.preventDefault();
-    if (!streamToken) {
-      setStatus({ state: "error", message: "Provide a stream token address." });
+    if (!ensureValidAddress(streamToken, "Stream token address")) {
       return;
     }
     if (!streamRecipient || streamRecipient === "0x") {
@@ -643,7 +648,7 @@ const App = () => {
                           <span>Token address</span>
                           <input
                             value={depositToken}
-                            onChange={(event) => setDepositToken(event.target.value)}
+                        onChange={(event) => setDepositToken(event.target.value.trim())}
                             className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white focus:border-purple-500 focus:outline-none"
                             placeholder="0x…"
                           />
@@ -912,7 +917,7 @@ const App = () => {
                       Token Address
                       <input
                         value={streamToken}
-                        onChange={(event) => setStreamToken(event.target.value)}
+                        onChange={(event) => setStreamToken(event.target.value.trim())}
                         className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white focus:border-purple-500 focus:outline-none"
                       />
                     </label>
@@ -1200,4 +1205,3 @@ const App = () => {
 };
 
 export default App;
-
